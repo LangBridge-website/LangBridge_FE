@@ -1,0 +1,39 @@
+/* 번역 작업 화면 스타일 */
+
+.translation-editor {
+  font-family: system-ui, Pretendard, sans-serif;
+}
+
+.translation-editor .ProseMirror {
+  outline: none;
+}
+
+.translation-editor .ProseMirror p,
+.translation-editor .ProseMirror h1,
+.translation-editor .ProseMirror h2,
+.translation-editor .ProseMirror h3,
+.translation-editor .ProseMirror h4,
+.translation-editor .ProseMirror h5,
+.translation-editor .ProseMirror h6,
+.translation-editor .ProseMirror div,
+.translation-editor .ProseMirror li {
+  margin: 8px 0;
+  padding: 4px 0;
+  transition: background-color 150ms;
+}
+
+.translation-editor .ProseMirror p:focus,
+.translation-editor .ProseMirror h1:focus,
+.translation-editor .ProseMirror h2:focus,
+.translation-editor .ProseMirror h3:focus {
+  outline: none;
+}
+
+.translation-editor .ProseMirror .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #808080;
+  pointer-events: none;
+  height: 0;
+}
+
