@@ -5,9 +5,10 @@ export type ButtonVariant = 'primary' | 'secondary' | 'disabled';
 interface ButtonProps {
   children: ReactNode;
   variant?: ButtonVariant;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   type?: 'button' | 'submit' | 'reset';
+  style?: React.CSSProperties;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -16,6 +17,7 @@ export const Button: React.FC<ButtonProps> = ({
   onClick,
   className = '',
   type = 'button',
+  style,
 }) => {
   const getButtonStyles = () => {
     switch (variant) {
@@ -45,9 +47,9 @@ export const Button: React.FC<ButtonProps> = ({
 
   const styles = getButtonStyles();
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (variant !== 'disabled' && onClick) {
-      onClick();
+      onClick(e);
     }
   };
 
@@ -65,6 +67,7 @@ export const Button: React.FC<ButtonProps> = ({
         fontSize: '13px',
         fontFamily: 'system-ui, Pretendard, sans-serif',
         fontWeight: 500,
+        ...style,
       }}
       disabled={variant === 'disabled'}
     >
