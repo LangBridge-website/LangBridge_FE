@@ -13,6 +13,7 @@ import {
   clearAllHighlights,
   Paragraph,
 } from '../utils/paragraphUtils';
+import ErrorBoundary from '../components/ErrorBoundary';
 import './TranslationWork.css';
 
 export default function TranslationWork() {
@@ -62,6 +63,7 @@ export default function TranslationWork() {
   
   // iframe 렌더링 상태 추적
   const hasRenderedMyTranslation = useRef(false);
+  
 
   // 마우스 호버로 문단 하이라이트 (useEffect보다 먼저 선언)
   const handleParagraphHover = useCallback((index: number) => {
@@ -399,7 +401,7 @@ export default function TranslationWork() {
           para.addEventListener('click', () => {
             try {
               const index = parseInt((para as HTMLElement).getAttribute('data-paragraph-index') || '0', 10);
-              handleParagraphHover(index);
+              setHighlightedParagraphIndex(index);
               console.log(`📍 내 번역 문단 ${index} 클릭 (약한 연동)`);
             } catch (e) {
               // 조용히 실패 (에러 표시 없음)
@@ -430,6 +432,7 @@ export default function TranslationWork() {
       }
     }
   }, [savedTranslationHtml, collapsedPanels, fullscreenPanel, isTranslationEditorInitialized]);
+
 
   // 편집 모드 처리 (텍스트/컴포넌트)
   useEffect(() => {
@@ -553,22 +556,32 @@ export default function TranslationWork() {
           background-color: rgba(169, 169, 169, 0.05) !important;
         }
         [data-component-selected="true"] {
-          border: 2px solid rgba(105, 105, 105, 1) !important;
-          background-color: rgba(169, 169, 169, 0.1) !important;
-          box-shadow: none !important;
+          border: none !important;
+          outline: 4px solid #28a745 !important;
+          outline-offset: 3px !important;
+          background-color: rgba(40, 167, 69, 0.25) !important;
+          box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.4), 0 4px 12px rgba(40, 167, 69, 0.5) !important;
           position: relative !important;
+          transition: all 0.2s ease !important;
         }
         [data-component-selected="true"]::after {
           content: '✓ 선택됨';
-          position: absolute;
-          top: -20px;
-          right: 0;
-          background: #696969;
+          position: fixed;
+          top: 10px;
+          right: 10px;
+          background: linear-gradient(135deg, #28a745, #20c997);
           color: white;
-          padding: 2px 6px;
-          font-size: 11px;
-          border-radius: 3px;
-          z-index: 1000;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 600;
+          box-shadow: 0 4px 12px rgba(40, 167, 69, 0.5);
+          z-index: 999999;
+          animation: fadeIn 0.2s ease;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `;
       iframeDoc.head.appendChild(style);
@@ -593,11 +606,25 @@ export default function TranslationWork() {
         if (isSelected) {
           // 이미 선택된 요소 클릭 → 선택 해제 (토글)
           editableEl.removeAttribute('data-component-selected');
+          // 인라인 스타일 제거
+          editableEl.style.outline = '';
+          editableEl.style.outlineOffset = '';
+          editableEl.style.backgroundColor = '';
+          editableEl.style.boxShadow = '';
+          editableEl.style.border = '';
           setSelectedElements(prev => prev.filter(el => el !== editableEl));
           console.log('🔴 선택 해제:', editableEl.tagName);
         } else {
           // 선택되지 않은 요소 클릭 → 선택 추가
           editableEl.setAttribute('data-component-selected', 'true');
+          // 인라인 스타일로 강제 적용 (CSS보다 우선순위 높음)
+          editableEl.style.border = 'none';
+          editableEl.style.outline = '4px solid #28a745';
+          editableEl.style.outlineOffset = '3px';
+          editableEl.style.backgroundColor = 'rgba(40, 167, 69, 0.25)';
+          editableEl.style.boxShadow = '0 0 0 4px rgba(40, 167, 69, 0.4), 0 4px 12px rgba(40, 167, 69, 0.5)';
+          editableEl.style.position = 'relative';
+          editableEl.style.transition = 'all 0.2s ease';
           setSelectedElements(prev => [...prev, editableEl]);
           console.log('🟢 선택 추가:', editableEl.tagName);
         }
@@ -886,7 +913,7 @@ export default function TranslationWork() {
   useEffect(() => {
     console.log(`🎨 하이라이트 상태 변경: ${highlightedParagraphIndex}`);
     
-    const applyParagraphStyles = (panel: HTMLElement | null, panelName: string) => {
+    const applyParagraphStyles = (panel: HTMLElement | null, panelName: string, isMyTranslation: boolean = false) => {
       if (!panel) return;
       clearAllHighlights(panel);
       
@@ -903,10 +930,15 @@ export default function TranslationWork() {
         }
         
         if (isComplete) {
-          para.element.style.opacity = '0.7';
-          para.element.style.textDecoration = 'line-through';
-          para.element.style.color = colors.secondaryText;
+          // 완료된 문단: 회색 배경색 적용
+          para.element.style.backgroundColor = 'rgba(211, 211, 211, 0.3)'; // lightgray 배경
+          para.element.style.opacity = '0.85';
+          para.element.style.transition = 'background-color 0.2s ease, opacity 0.2s ease';
+          // 취소선은 제거 (회색 배경만으로 충분)
+          para.element.style.textDecoration = '';
+          para.element.style.color = '';
         } else {
+          para.element.style.backgroundColor = '';
           para.element.style.opacity = '';
           para.element.style.textDecoration = '';
           para.element.style.color = '';
@@ -924,9 +956,9 @@ export default function TranslationWork() {
       applyParagraphStyles(aiDraftIframeRef.current.contentDocument.body as HTMLElement, 'AI 초벌');
     }
     
-    // 에디터 내부 문단 스타일 적용
+    // 에디터 내부 문단 스타일 적용 (내 번역)
     if (myTranslationIframeRef.current?.contentDocument?.body) {
-      applyParagraphStyles(myTranslationIframeRef.current.contentDocument.body as HTMLElement, '내 번역');
+      applyParagraphStyles(myTranslationIframeRef.current.contentDocument.body as HTMLElement, '내 번역', true);
     }
   }, [highlightedParagraphIndex, completedParagraphs]);
 
@@ -936,10 +968,37 @@ export default function TranslationWork() {
       const newSet = new Set(prev);
       if (newSet.has(index)) {
         newSet.delete(index);
+        console.log(`❌ 문단 ${index} 완료 해제`);
       } else {
         newSet.add(index);
+        console.log(`✅ 문단 ${index} 완료 표시`);
       }
-      setProgress((p) => ({ ...p, completed: newSet.size }));
+      
+      // iframe 내부 UI 즉시 업데이트
+      const iframe = myTranslationIframeRef.current;
+      if (iframe) {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc) {
+          const paraElement = iframeDoc.querySelector(`[data-paragraph-index="${index}"]`) as HTMLElement;
+          if (paraElement) {
+            if (newSet.has(index)) {
+              paraElement.classList.add('completed');
+            } else {
+              paraElement.classList.remove('completed');
+            }
+          }
+        }
+      }
+      
+      // 진행률 업데이트 (전체 문단 수 대비 완료된 문단 수)
+      const completedCount = newSet.size;
+      setProgress((p) => {
+        const newProgress = { ...p, completed: completedCount };
+        const percentage = p.total > 0 ? Math.round((completedCount / p.total) * 100) : 0;
+        console.log(`📊 진행률 업데이트: ${completedCount}/${p.total} (${percentage}%)`);
+        return newProgress;
+      });
+      
       return newSet;
     });
   }, []);
@@ -948,6 +1007,29 @@ export default function TranslationWork() {
   useEffect(() => {
     setProgress((prev) => ({ ...prev, completed: completedParagraphs.size }));
   }, [completedParagraphs]);
+
+  // completedParagraphs 변경 시 iframe 내부 완료 상태 동기화
+  useEffect(() => {
+    const iframe = myTranslationIframeRef.current;
+    if (!iframe) return;
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) return;
+
+    const paragraphs = iframeDoc.querySelectorAll('[data-paragraph-index]');
+    paragraphs.forEach((para) => {
+      const paraElement = para as HTMLElement;
+      const index = parseInt(paraElement.getAttribute('data-paragraph-index') || '0', 10);
+      
+      if (completedParagraphs.has(index)) {
+        paraElement.classList.add('completed');
+      } else {
+        paraElement.classList.remove('completed');
+      }
+    });
+  }, [completedParagraphs]);
+
+
 
   const handleHandover = () => {
     setShowHandoverModal(true);
@@ -1131,7 +1213,7 @@ export default function TranslationWork() {
               type="checkbox"
               checked={!collapsedPanels.has('original')}
               onChange={() => togglePanel('original')}
-              style={{ 
+              style={{
                 cursor: 'pointer',
                 width: '16px',
                 height: '16px',
@@ -1145,7 +1227,7 @@ export default function TranslationWork() {
             gap: '8px', 
             fontSize: '13px', 
             cursor: 'pointer',
-            fontWeight: 500,
+                fontWeight: 500,
           }}>
             <input
               type="checkbox"
@@ -1185,10 +1267,20 @@ export default function TranslationWork() {
             marginLeft: '8px',
             paddingLeft: '16px',
             borderLeft: '1px solid #D3D3D3',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}>
-            진행률: {progress.completed}/{progress.total} ({progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0}%)
+            <span>진행률: {progress.completed}/{progress.total} ({progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0}%)</span>
+            <span style={{ 
+              fontSize: '10px', 
+              color: '#808080',
+              fontStyle: 'italic',
+            }} title="각 문단 옆 체크박스를 클릭하여 번역 완료를 표시하세요">
+              💡 문단 옆 체크박스로 완료 표시
+            </span>
+            </div>
           </div>
-        </div>
 
         {/* 오른쪽: 저장/완료 버튼 */}
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -1285,25 +1377,37 @@ export default function TranslationWork() {
                   height: '36px',
                 }}
               >
-                <span style={{ fontSize: '12px', fontWeight: 600, color: '#000000' }}>
-                  {panel.title}
-                </span>
-                <button
-                  onClick={() => toggleFullscreen(panel.id)}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '11px',
-                    border: '1px solid #A9A9A9',
-                    borderRadius: '3px',
-                    backgroundColor: '#FFFFFF',
-                    color: '#000000',
-                    cursor: 'pointer',
-                    fontWeight: 500,
-                  }}
-                  title={isFullscreen ? '확대 해제' : '전체화면 확대'}
-                >
-                  {isFullscreen ? '축소' : '확대'}
-                </button>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#000000' }}>
+                      {panel.title}
+                    </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {panel.id === 'myTranslation' && (
+                    <span style={{ 
+                          fontSize: '11px',
+                      color: '#2C5F7C', 
+                          fontWeight: 500,
+                      marginRight: '4px',
+                    }}>
+                      💡 각 문단 옆 체크박스를 클릭하여 번역 완료를 표시하세요
+                    </span>
+                  )}
+                      <button
+                    onClick={() => toggleFullscreen(panel.id)}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          border: '1px solid #A9A9A9',
+                          borderRadius: '3px',
+                          backgroundColor: '#FFFFFF',
+                          color: '#000000',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                        }}
+                    title={isFullscreen ? '확대 해제' : '전체화면 확대'}
+                      >
+                    {isFullscreen ? '축소' : '확대'}
+                      </button>
+                    </div>
               </div>
 
               {/* 패널 내용 */}
@@ -1318,13 +1422,14 @@ export default function TranslationWork() {
                     backgroundColor: '#FFFFFF',
                     display: 'flex',
                     flexDirection: 'column',
+                    position: 'relative', // 오버레이를 위한 relative positioning
                   }}
                 >
                   {panel.id === 'myTranslation' ? (
                     // 내 번역 패널 (iframe 기반 에디터 - HTML 구조 보존)
                     <>
                       {/* 편집 툴바 */}
-                      <div style={{ padding: '8px 12px', borderBottom: '1px solid #C0C0C0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8F9FA' }}>
+                      <div style={{ padding: '8px 12px', borderBottom: '1px solid #C0C0C0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8F9FA', flexWrap: 'wrap', gap: '8px' }}>
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {/* 모드 선택 */}
                           <Button
@@ -1341,6 +1446,7 @@ export default function TranslationWork() {
                           >
                             컴포넌트 편집
                           </Button>
+                          
                           
                           {/* Rich Text 기능 (텍스트 모드일 때만) */}
                           {editorMode === 'text' && (
@@ -1697,39 +1803,40 @@ export default function TranslationWork() {
                         title="내 번역 에디터"
                         onLoad={() => {
                           const iframe = myTranslationIframeRef.current;
-                          if (iframe && !hasRenderedMyTranslation.current) {
-                            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-                            if (iframeDoc && iframeDoc.body) {
-                              try {
-                                // body를 편집 가능하게 설정
-                                iframeDoc.body.contentEditable = 'true';
-                                iframeDoc.body.style.padding = '16px';
-                                iframeDoc.body.style.wordWrap = 'break-word';
-                                
-                                // 편집 시 자동 저장 (debounce)
-                                // 참고: setSavedTranslationHtml을 호출하면 srcDoc이 업데이트되어 iframe이 재렌더링되므로
-                                // currentEditorHtmlRef에만 저장하고, 실제 저장은 "저장하기" 버튼으로 수행
-                                let saveTimeout: NodeJS.Timeout;
-                                const handleInput = () => {
-                                  clearTimeout(saveTimeout);
-                                  saveTimeout = setTimeout(() => {
-                                    if (iframeDoc.documentElement) {
-                                      const updatedHtml = iframeDoc.documentElement.outerHTML;
-                                      currentEditorHtmlRef.current = updatedHtml;
-                                      console.log('📝 편집 내용 임시 저장됨 (메모리)');
-                                    }
-                                  }, 500);
-                                };
-                                
-                                iframeDoc.body.addEventListener('input', handleInput);
-                                
-                                hasRenderedMyTranslation.current = true;
-                                setIsTranslationEditorInitialized(true);
-                                console.log('✅ 내 번역 iframe 편집 가능 설정 완료');
-                              } catch (error) {
-                                console.error('내 번역 iframe 설정 실패:', error);
-                              }
+                          if (!iframe) return;
+                          
+                          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                          if (!iframeDoc || !iframeDoc.body) return;
+
+                          try {
+                            // body를 편집 가능하게 설정
+                            iframeDoc.body.contentEditable = 'true';
+                            iframeDoc.body.style.padding = '16px';
+                            iframeDoc.body.style.wordWrap = 'break-word';
+                            
+                            // 편집 시 자동 저장 (debounce)
+                            let saveTimeout: NodeJS.Timeout;
+                            const handleInput = () => {
+                              clearTimeout(saveTimeout);
+                              saveTimeout = setTimeout(() => {
+                                if (iframeDoc.documentElement) {
+                                  const updatedHtml = iframeDoc.documentElement.outerHTML;
+                                  currentEditorHtmlRef.current = updatedHtml;
+                                  console.log('📝 편집 내용 임시 저장됨 (메모리)');
+                                }
+                              }, 500);
+                            };
+                            
+                            iframeDoc.body.addEventListener('input', handleInput);
+                            
+                            if (!hasRenderedMyTranslation.current) {
+                              hasRenderedMyTranslation.current = true;
+                              setIsTranslationEditorInitialized(true);
                             }
+                            
+                            console.log(`✅ 내 번역 iframe 설정 완료 (문단 ${paragraphs.length}개, 완료 표시 기능 활성화)`);
+                          } catch (error) {
+                            console.error('내 번역 iframe 설정 실패:', error);
                           }
                         }}
                       />
