@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { UserProvider } from './contexts/UserContext';
 import { SidebarProvider } from './contexts/SidebarContext';
 import { Layout } from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import Home from './pages/Home';
 import Translation from './pages/Translation';
 import WebPageEditor from './pages/WebPageEditor';
@@ -25,46 +26,122 @@ const Settings = () => <div className="p-8"><h1 className="text-2xl font-bold">�
 
 function App() {
   return (
-    <UserProvider>
-      <SidebarProvider>
-        <Router>
-          <Routes>
-            {/* Public 영역: Layout 없이 렌더링 */}
-            <Route path="/" element={<Home />} />
-            
-            {/* App 영역: Layout 포함 */}
-            <Route
-              path="/*"
-              element={
-                <Layout>
-                  <Routes>
-                    <Route path="/translate" element={<Translation />} />
-                    <Route path="/editor" element={<WebPageEditor />} />
-                    
-                    {/* 사이드바 메뉴 라우트 */}
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/translation-guide" element={<TranslationGuide />} />
-                    <Route path="/translations/pending" element={<TranslationsPending />} />
-                    <Route path="/translations/:id/work" element={<TranslationWork />} />
-                    <Route path="/translations/working" element={<TranslationsWorking />} />
-                    <Route path="/translations/favorites" element={<TranslationsFavorites />} />
-                    <Route path="/documents" element={<Documents />} />
-                    <Route path="/documents/categories" element={<DocumentsCategories />} />
-                    <Route path="/documents/status" element={<DocumentsStatus />} />
-                    <Route path="/translations/new" element={<NewTranslation />} />
-                    <Route path="/reviews" element={<Reviews />} />
-                    <Route path="/glossary" element={<Glossary />} />
-                    <Route path="/glossary/manage" element={<GlossaryManage />} />
-                    <Route path="/activity" element={<Activity />} />
-                    <Route path="/settings" element={<Settings />} />
-                  </Routes>
-                </Layout>
-              }
-            />
-          </Routes>
-        </Router>
-      </SidebarProvider>
-    </UserProvider>
+    <ErrorBoundary>
+      <UserProvider>
+        <SidebarProvider>
+          <Router>
+            <Routes>
+              {/* Public 영역: Layout 없이 렌더링 */}
+              <Route path="/" element={
+                <ErrorBoundary>
+                  <Home />
+                </ErrorBoundary>
+              } />
+              
+              {/* App 영역: Layout 포함 */}
+              <Route
+                path="/*"
+                element={
+                  <Layout>
+                    <ErrorBoundary>
+                      <Routes>
+                        <Route path="/translate" element={
+                          <ErrorBoundary>
+                            <Translation />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/editor" element={
+                          <ErrorBoundary>
+                            <WebPageEditor />
+                          </ErrorBoundary>
+                        } />
+                        
+                        {/* 사이드바 메뉴 라우트 */}
+                        <Route path="/dashboard" element={
+                          <ErrorBoundary>
+                            <Dashboard />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/translation-guide" element={
+                          <ErrorBoundary>
+                            <TranslationGuide />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/translations/pending" element={
+                          <ErrorBoundary>
+                            <TranslationsPending />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/translations/:id/work" element={
+                          <ErrorBoundary>
+                            <TranslationWork />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/translations/working" element={
+                          <ErrorBoundary>
+                            <TranslationsWorking />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/translations/favorites" element={
+                          <ErrorBoundary>
+                            <TranslationsFavorites />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/documents" element={
+                          <ErrorBoundary>
+                            <Documents />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/documents/categories" element={
+                          <ErrorBoundary>
+                            <DocumentsCategories />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/documents/status" element={
+                          <ErrorBoundary>
+                            <DocumentsStatus />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/translations/new" element={
+                          <ErrorBoundary>
+                            <NewTranslation />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/reviews" element={
+                          <ErrorBoundary>
+                            <Reviews />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/glossary" element={
+                          <ErrorBoundary>
+                            <Glossary />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/glossary/manage" element={
+                          <ErrorBoundary>
+                            <GlossaryManage />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/activity" element={
+                          <ErrorBoundary>
+                            <Activity />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/settings" element={
+                          <ErrorBoundary>
+                            <Settings />
+                          </ErrorBoundary>
+                        } />
+                      </Routes>
+                    </ErrorBoundary>
+                  </Layout>
+                }
+              />
+            </Routes>
+          </Router>
+        </SidebarProvider>
+      </UserProvider>
+    </ErrorBoundary>
   );
 }
 
