@@ -39,11 +39,37 @@ const Dashboard: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [categoryMap, setCategoryMap] = useState<Map<number, string>>(new Map());
+  const [favoriteStatus, setFavoriteStatus] = useState<Map<number, boolean>>(new Map());
 
   const userRole = useMemo(() => {
     if (!user) return null;
     return roleLevelToRole(user.roleLevel);
   }, [user]);
+
+  const handleToggleFavorite = async (docId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const isFavorite = favoriteStatus.get(docId) || false;
+      if (isFavorite) {
+        await documentApi.removeFavorite(docId);
+        setFavoriteStatus(prev => {
+          const newMap = new Map(prev);
+          newMap.set(docId, false);
+          return newMap;
+        });
+      } else {
+        await documentApi.addFavorite(docId);
+        setFavoriteStatus(prev => {
+          const newMap = new Map(prev);
+          newMap.set(docId, true);
+          return newMap;
+        });
+      }
+    } catch (error) {
+      console.error('찜 상태 변경 실패:', error);
+      alert('찜 상태를 변경하는데 실패했습니다.');
+    }
+  };
 
   const isAdmin = useMemo(() => {
     return userRole === UserRole.SUPER_ADMIN || userRole === UserRole.ADMIN;
@@ -234,6 +260,39 @@ const Dashboard: React.FC = () => {
     }
   }, [isAdmin, categoryMap]);
 
+  // 찜 상태 로드
+  useEffect(() => {
+    const loadFavoriteStatus = async () => {
+      try {
+        const allDocIds = [
+          ...data.pendingDocuments.map(d => d.id),
+          ...data.workingDocuments.map(d => d.id),
+          ...(data.approvedDocuments || []).map(d => d.id),
+          ...(data.rejectedDocuments || []).map(d => d.id),
+          ...(data.latestReviewDocument ? [data.latestReviewDocument.id] : []),
+        ];
+        const favoriteMap = new Map<number, boolean>();
+        await Promise.all(
+          allDocIds.map(async (docId) => {
+            try {
+              const isFavorite = await documentApi.isFavorite(docId);
+              favoriteMap.set(docId, isFavorite);
+            } catch (error) {
+              console.warn(`문서 ${docId}의 찜 상태를 가져올 수 없습니다:`, error);
+              favoriteMap.set(docId, false);
+            }
+          })
+        );
+        setFavoriteStatus(favoriteMap);
+      } catch (error) {
+        console.error('찜 상태 로드 실패:', error);
+      }
+    };
+    if (data.pendingDocuments.length > 0 || data.workingDocuments.length > 0) {
+      loadFavoriteStatus();
+    }
+  }, [data]);
+
   return (
     <div
       className="p-8"
@@ -406,9 +465,29 @@ const Dashboard: React.FC = () => {
                             fontFamily: 'system-ui, Pretendard, sans-serif',
                             fontWeight: 500,
                             marginBottom: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
                           }}
                         >
-                          {doc.title}
+                          <button
+                            onClick={(e) => handleToggleFavorite(doc.id, e)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              fontSize: '16px',
+                              color: (favoriteStatus.get(doc.id) || false) ? '#FFD700' : '#C0C0C0',
+                              transition: 'color 0.2s',
+                            }}
+                            title={(favoriteStatus.get(doc.id) || false) ? '찜 해제' : '찜 추가'}
+                          >
+                            {(favoriteStatus.get(doc.id) || false) ? '★' : '☆'}
+                          </button>
+                          <span>{doc.title}</span>
                         </div>
                         <div
                           style={{
@@ -817,4 +896,5 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+
 

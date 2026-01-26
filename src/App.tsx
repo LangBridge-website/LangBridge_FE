@@ -17,7 +17,7 @@ import TranslationWork from './pages/TranslationWork';
 import TranslationsWorking from './pages/TranslationsWorking';
 import Reviews from './pages/Reviews';
 import DocumentReview from './pages/DocumentReview';
-const TranslationsFavorites = () => <div className="p-8"><h1 className="text-2xl font-bold">찜한 문서</h1></div>;
+import TranslationsFavorites from './pages/TranslationsFavorites';
 const DocumentsCategories = () => <div className="p-8"><h1 className="text-2xl font-bold">카테고리별 문서</h1></div>;
 const DocumentsStatus = () => <div className="p-8"><h1 className="text-2xl font-bold">상태별 문서</h1></div>;
 const Glossary = () => <div className="p-8"><h1 className="text-2xl font-bold">용어집 보기</h1></div>;
