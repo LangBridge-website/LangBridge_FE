@@ -170,12 +170,26 @@ function Translation() {
       if (iframeDoc) {
         let htmlContent = editedOriginalHtml
         
+        // editedOriginalHtml이 body 내용만 있는지 확인
+        const isBodyContentOnly = !htmlContent.trim().toLowerCase().startsWith('<!doctype') && 
+                                   !htmlContent.includes('<html') && 
+                                   !htmlContent.includes('<body')
+        
+        // body 내용만 있는 경우에만 body로 감싸기
+        if (isBodyContentOnly) {
+          htmlContent = `<body>${htmlContent}</body>`
+        }
+        
         // HTML 구조 확인 및 보완
         const hasDoctype = htmlContent.trim().toLowerCase().startsWith('<!doctype')
         const hasHtml = htmlContent.includes('<html')
         const hasBody = htmlContent.includes('<body')
         
-        if (!hasDoctype || !hasHtml || !hasBody) {
+        // 이미 완전한 HTML 문서 구조인지 확인
+        const isCompleteDocument = hasDoctype && hasHtml && hasBody
+        
+        // 완전한 구조가 아닐 때만 보완 (중복 wrapper 방지)
+        if (!isCompleteDocument) {
           if (!htmlContent.includes('<body')) {
             htmlContent = `<body>${htmlContent}</body>`
           }
@@ -238,10 +252,13 @@ function Translation() {
         setTimeout(() => {
           if (iframeDoc.body) {
             enableTextEditing(iframeDoc)
-            // 편집 내용 추적
+            // 편집 내용 추적 - body 내용만 저장 (wrapper 방지)
             iframeDoc.body.addEventListener('input', () => {
-              const updatedHtml = iframeDoc.documentElement.outerHTML
-              setEditedOriginalHtml(updatedHtml)
+              if (iframeDoc.body) {
+                // body의 innerHTML만 저장 (wrapper 방지)
+                const bodyContent = iframeDoc.body.innerHTML
+                setEditedOriginalHtml(bodyContent)
+              }
             })
           }
         }, 200)
@@ -877,9 +894,16 @@ function Translation() {
       })
     }
     
-    // 편집된 원본 HTML 저장
-    const finalHtml = iframeDoc.documentElement.outerHTML
-    setEditedOriginalHtml(finalHtml)
+    // 편집된 원본 HTML 저장 - body 내용만 추출 (wrapper 방지)
+    if (iframeDoc.body) {
+      // body의 innerHTML만 저장 (wrapper 방지)
+      const bodyContent = iframeDoc.body.innerHTML
+      setEditedOriginalHtml(bodyContent)
+    } else {
+      // body가 없으면 전체 문서 저장 (fallback)
+      const finalHtml = iframeDoc.documentElement.outerHTML
+      setEditedOriginalHtml(finalHtml)
+    }
     
     // 원본 편집 모드로 전환
     setIsSelectionMode(false)
