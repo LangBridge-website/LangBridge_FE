@@ -86,18 +86,62 @@ const Step2AreaSelection: React.FC<{
   // 이벤트 리스너를 추적하기 위한 ref
   const listenersAttached = React.useRef(false);
   
-  // selectedAreas가 변경될 때마다 현재 iframe HTML 저장
+  // selectedAreas가 변경될 때마다 현재 iframe HTML 저장 및 선택 상태 동기화
   React.useEffect(() => {
-    if (iframeRef.current && onHtmlUpdate && selectedAreas.length > 0) {
+    if (!iframeRef.current || !pageLoaded) return;
+    
       const iframe = iframeRef.current;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (iframeDoc) {
+    if (!iframeDoc) return;
+    
+    // ⭐ iframe의 선택 상태를 selectedAreas와 동기화
+    // 1. 모든 선택 상태 제거
+    iframeDoc.querySelectorAll('.transflow-selected').forEach(el => {
+      el.classList.remove('transflow-selected');
+    });
+    
+    // 2. selectedAreas에 있는 요소만 다시 선택 표시
+    const selectedIds = new Set(selectedAreas.map(area => area.id));
+    selectedIds.forEach(id => {
+      const el = iframeDoc.querySelector(`[data-transflow-id="${id}"]`) as HTMLElement;
+      if (el) {
+        el.classList.add('transflow-selected');
+      }
+    });
+    
+    console.log('🔄 Step 2 선택 상태 동기화 완료:', selectedIds.size, '개 영역');
+    
+    // 3. iframe HTML 저장
+    if (onHtmlUpdate && selectedAreas.length > 0) {
         const currentHtml = iframeDoc.documentElement.outerHTML;
         onHtmlUpdate(currentHtml);
         console.log('💾 STEP 2 iframe HTML 저장 완료 (data-transflow-id 포함)');
       }
+  }, [selectedAreas, onHtmlUpdate, pageLoaded]);
+
+  // ⭐ hoveredAreaId가 변경될 때 iframe에서 해당 영역 하이라이트
+  React.useEffect(() => {
+    if (!iframeRef.current || !pageLoaded) return;
+    
+    const iframe = iframeRef.current;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) return;
+    
+    // 기존 호버 하이라이트 제거
+    iframeDoc.querySelectorAll('.transflow-hovering').forEach(el => {
+      el.classList.remove('transflow-hovering');
+    });
+    
+    // hoveredAreaId에 해당하는 요소 하이라이트
+    if (hoveredAreaId) {
+      const el = iframeDoc.querySelector(`[data-transflow-id="${hoveredAreaId}"]`) as HTMLElement;
+      if (el && !el.classList.contains('transflow-selected')) {
+        el.classList.add('transflow-hovering');
+        // 스크롤하여 보이도록 (필요한 경우)
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     }
-  }, [selectedAreas, onHtmlUpdate]);
+  }, [hoveredAreaId, pageLoaded]);
 
   // 영역 선택 모드 활성화 함수 (Translation.jsx와 동일한 구조)
   // useCallback을 제거하고 일반 함수로 변경 (의존성 문제 해결)
@@ -120,6 +164,10 @@ const Step2AreaSelection: React.FC<{
       * {
         user-select: none !important;
         -webkit-user-select: none !important;
+      }
+      a {
+        cursor: crosshair !important;
+        pointer-events: auto !important;
       }
       .transflow-hovering {
         outline: 4px dashed #667eea !important;
@@ -236,27 +284,38 @@ const Step2AreaSelection: React.FC<{
       if (!target || target === iframeDoc.body || target === iframeDoc.documentElement) return;
       if (target.tagName === 'SCRIPT' || target.tagName === 'STYLE' || target.tagName === 'NOSCRIPT') return;
       
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      const linkElement = target.closest('a') || (target.tagName === 'A' ? target : null);
+      if (linkElement) {
+        e.preventDefault();
       e.stopPropagation();
+        e.stopImmediatePropagation();
+      } else {
+        e.stopPropagation();
+      }
+      
+      // 링크인 경우 가장 가까운 링크 요소를 선택 대상으로 사용
+      const elementToSelect = linkElement || target;
       
       // 요소에 고유 ID 부여
-      let elementId = target.getAttribute('data-transflow-id');
+      let elementId = elementToSelect.getAttribute('data-transflow-id');
       if (!elementId) {
         elementId = `transflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        target.setAttribute('data-transflow-id', elementId);
+        elementToSelect.setAttribute('data-transflow-id', elementId);
       }
       
       // 선택 토글
-      if (target.classList.contains('transflow-selected')) {
-        target.classList.remove('transflow-selected');
+      if (elementToSelect.classList.contains('transflow-selected')) {
+        elementToSelect.classList.remove('transflow-selected');
         console.log('🔴 선택 해제:', elementId);
         onAreaRemove(elementId);
       } else {
-        target.classList.add('transflow-selected');
-        console.log('🟢 선택 추가:', elementId, target.tagName);
+        elementToSelect.classList.add('transflow-selected');
+        console.log('🟢 선택 추가:', elementId, elementToSelect.tagName);
         updateSelectedElements();
       }
       
-      target.classList.remove('transflow-hovering');
+      elementToSelect.classList.remove('transflow-hovering');
       highlightedElement = null;
     };
     
@@ -496,10 +555,16 @@ const Step3PreEdit: React.FC<{
   const undoStackRef = React.useRef<string[]>([]);
   const redoStackRef = React.useRef<string[]>([]);
   const currentHtmlRef = React.useRef<string>('');
+  // 공백 제거용 별도 undo stack
+  const spacingUndoStackRef = React.useRef<string[]>([]);
+  const spacingRedoStackRef = React.useRef<string[]>([]);
+  const spacingCurrentHtmlRef = React.useRef<string>('');
   // 컴포넌트 클릭 핸들러 저장 (제거를 위해)
   const componentClickHandlersRef = React.useRef<Map<HTMLElement, (e: Event) => void>>(new Map());
   // 공백 제거 모드 클릭 핸들러 저장 (제거를 위해)
   const spacingClickHandlersRef = React.useRef<Map<HTMLElement, (e: Event) => void>>(new Map());
+  // 링크 클릭 방지 핸들러 저장 (제거를 위해)
+  const linkClickHandlersRef = React.useRef<Map<HTMLElement, (e: Event) => void>>(new Map());
   
   // 공백 제거 상태 추적
   const spacingRemovedRef = React.useRef<{
@@ -546,6 +611,49 @@ const Step3PreEdit: React.FC<{
         }
       });
       
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      // 기존 링크 클릭 핸들러 제거
+      linkClickHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener('click', handler, true);
+      });
+      linkClickHandlersRef.current.clear();
+      
+      // 모든 링크에 클릭 방지 핸들러 추가
+      const allLinks = iframeDoc.querySelectorAll('a');
+      const preventLinkNavigation = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      };
+      
+      allLinks.forEach(link => {
+        const htmlLink = link as HTMLElement;
+        htmlLink.addEventListener('click', preventLinkNavigation, true);
+        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        // 링크 스타일 변경 (편집 모드임을 표시)
+        htmlLink.style.cursor = 'text';
+        htmlLink.style.textDecoration = 'none';
+      });
+      
+      // 링크 스타일 CSS 추가
+      const linkStyle = iframeDoc.createElement('style');
+      linkStyle.id = 'text-edit-link-style';
+      linkStyle.textContent = `
+        a {
+          cursor: text !important;
+          pointer-events: auto !important;
+        }
+        a:hover {
+          text-decoration: underline !important;
+        }
+      `;
+      const existingLinkStyle = iframeDoc.getElementById('text-edit-link-style');
+      if (existingLinkStyle) {
+        existingLinkStyle.remove();
+      }
+      iframeDoc.head.appendChild(linkStyle);
+      
       // 컴포넌트 편집 스타일 제거 및 이벤트 리스너 제거
       const allElements = iframeDoc.querySelectorAll('[data-component-editable]');
       allElements.forEach(el => {
@@ -553,6 +661,7 @@ const Step3PreEdit: React.FC<{
         htmlEl.style.outline = 'none';
         htmlEl.style.cursor = 'text';
         htmlEl.style.boxShadow = 'none'; // boxShadow도 제거!
+        htmlEl.style.backgroundColor = ''; // ⭐ 초록색 배경 제거
         htmlEl.classList.remove('component-selected');
         htmlEl.removeAttribute('data-component-editable');
         
@@ -611,6 +720,18 @@ const Step3PreEdit: React.FC<{
         (el as HTMLElement).contentEditable = 'false';
         (el as HTMLElement).style.cursor = 'default';
       });
+      
+      // ⭐ 링크 클릭 핸들러 제거
+      linkClickHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener('click', handler, true);
+      });
+      linkClickHandlersRef.current.clear();
+      
+      // 링크 스타일 태그 제거
+      const linkStyle = iframeDoc.getElementById('text-edit-link-style');
+      if (linkStyle) {
+        linkStyle.remove();
+      }
       
       // 공백 제거 모드 선택 스타일 제거
       const spacingSelectedElements = iframeDoc.querySelectorAll('.spacing-selected');
@@ -686,7 +807,29 @@ const Step3PreEdit: React.FC<{
         }
       });
       
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      const allLinks = iframeDoc.querySelectorAll('a');
+      const preventLinkNavigation = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      };
+      
+      allLinks.forEach(link => {
+        const htmlLink = link as HTMLElement;
+        // 기존 핸들러가 있으면 제거
+        const existingLinkHandler = linkClickHandlersRef.current.get(htmlLink);
+        if (existingLinkHandler) {
+          htmlLink.removeEventListener('click', existingLinkHandler, true);
+        }
+        htmlLink.addEventListener('click', preventLinkNavigation, true);
+        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        htmlLink.style.cursor = 'pointer';
+      });
+      
       console.log('✅ 컴포넌트 클릭 리스너 추가 완료:', componentElements.length, '개');
+      console.log('✅ 링크 클릭 방지 핸들러 추가 완료:', allLinks.length, '개');
       
     } else if (mode === 'spacing') {
       // 공백 제거 모드
@@ -696,6 +839,18 @@ const Step3PreEdit: React.FC<{
         (el as HTMLElement).contentEditable = 'false';
         (el as HTMLElement).style.cursor = 'pointer';
       });
+      
+      // ⭐ 링크 클릭 핸들러 제거
+      linkClickHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener('click', handler, true);
+      });
+      linkClickHandlersRef.current.clear();
+      
+      // 링크 스타일 태그 제거
+      const linkStyle = iframeDoc.getElementById('text-edit-link-style');
+      if (linkStyle) {
+        linkStyle.remove();
+      }
       
       // 컴포넌트 편집 스타일 제거
       const componentElements = iframeDoc.querySelectorAll('[data-component-editable]');
@@ -777,7 +932,29 @@ const Step3PreEdit: React.FC<{
         }
       });
       
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      const allLinks = iframeDoc.querySelectorAll('a');
+      const preventLinkNavigation = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      };
+      
+      allLinks.forEach(link => {
+        const htmlLink = link as HTMLElement;
+        // 기존 핸들러가 있으면 제거
+        const existingLinkHandler = linkClickHandlersRef.current.get(htmlLink);
+        if (existingLinkHandler) {
+          htmlLink.removeEventListener('click', existingLinkHandler, true);
+        }
+        htmlLink.addEventListener('click', preventLinkNavigation, true);
+        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        htmlLink.style.cursor = 'pointer';
+      });
+      
       console.log('✅ 공백 제거 모드 클릭 리스너 추가 완료:', spacingElements.length, '개');
+      console.log('✅ 링크 클릭 방지 핸들러 추가 완료:', allLinks.length, '개');
       
     } else if (mode === 'spacing-all') {
       // 전체 공백 제거 모드 (Step 2에서 선택한 영역 전체에 공백 제거)
@@ -787,6 +964,36 @@ const Step3PreEdit: React.FC<{
         (el as HTMLElement).contentEditable = 'false';
         (el as HTMLElement).style.cursor = 'default';
       });
+      
+      // ⭐ 링크 클릭 핸들러 제거
+      linkClickHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener('click', handler, true);
+      });
+      linkClickHandlersRef.current.clear();
+      
+      // 링크 스타일 태그 제거
+      const linkStyle = iframeDoc.getElementById('text-edit-link-style');
+      if (linkStyle) {
+        linkStyle.remove();
+      }
+      
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      const allLinks = iframeDoc.querySelectorAll('a');
+      const preventLinkNavigation = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      };
+      
+      allLinks.forEach(link => {
+        const htmlLink = link as HTMLElement;
+        htmlLink.addEventListener('click', preventLinkNavigation, true);
+        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        htmlLink.style.cursor = 'default';
+      });
+      
+      console.log('✅ 전체 공백 제거 모드 링크 클릭 방지 핸들러 추가 완료:', allLinks.length, '개');
       
       // 컴포넌트 편집 스타일 제거
       const componentElements = iframeDoc.querySelectorAll('[data-component-editable]');
@@ -963,6 +1170,10 @@ const Step3PreEdit: React.FC<{
             currentHtmlRef.current = selectedOnlyHtml;
             undoStackRef.current = []; // 초기화
             redoStackRef.current = []; // 초기화
+            // ⭐ 공백 제거 undo stack도 초기화
+            spacingCurrentHtmlRef.current = selectedOnlyHtml;
+            spacingUndoStackRef.current = [];
+            spacingRedoStackRef.current = [];
             
             onHtmlChange(selectedOnlyHtml);
             
@@ -1172,11 +1383,11 @@ const Step3PreEdit: React.FC<{
     console.log('🔍 [공백 제거 전] 부모 요소 스타일:', beforeStyles);
     console.log('🔍 [공백 제거 전] HTML 길이:', beforeHtml.length);
 
-    // 현재 상태를 undo stack에 저장
+    // ⭐ 공백 제거 전 현재 상태를 공백 제거 undo stack에 저장
     const currentHtml = iframeDoc.documentElement.outerHTML;
-    if (currentHtmlRef.current && currentHtmlRef.current !== currentHtml) {
-      undoStackRef.current.push(currentHtmlRef.current);
-      redoStackRef.current = [];
+    if (spacingCurrentHtmlRef.current && spacingCurrentHtmlRef.current !== currentHtml) {
+      spacingUndoStackRef.current.push(spacingCurrentHtmlRef.current);
+      spacingRedoStackRef.current = [];
     }
 
     // CSS 스타일을 동적으로 추가하기 위한 스타일 태그 생성 또는 업데이트
@@ -1498,8 +1709,35 @@ const Step3PreEdit: React.FC<{
 
     // HTML 업데이트
     const updatedHtml = iframeDoc.documentElement.outerHTML;
+    
+    // ⭐ 공백 제거 후 브라우저 undo history 초기화 (텍스트 편집 undo와 분리)
+    try {
+      // 공백 제거가 완료된 후 iframe을 다시 write하여 브라우저 undo history 초기화
+      iframeDoc.open();
+      iframeDoc.write(updatedHtml);
+      iframeDoc.close();
+      console.log('🔄 브라우저 undo history 초기화 완료 (공백 제거 후)');
+      
+      // contentEditable 상태 복원 (텍스트 편집 모드인 경우)
+      if (mode === 'text') {
+        setTimeout(() => {
+          const editableElements = iframeDoc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, div, li, td, th, label, a, button, article, section, header, footer, main, aside');
+          editableElements.forEach((el) => {
+            if (el.tagName && !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName)) {
+              (el as HTMLElement).contentEditable = 'true';
+              (el as HTMLElement).style.cursor = 'text';
+            }
+          });
+        }, 0);
+      }
+    } catch (e) {
+      console.warn('⚠️ 브라우저 undo history 초기화 실패:', e);
+    }
+    
     // 변경 후 undo stack에 저장 (변경 전 상태는 이미 저장됨)
     currentHtmlRef.current = updatedHtml;
+    // ⭐ 공백 제거 undo stack도 업데이트
+    spacingCurrentHtmlRef.current = updatedHtml;
     onHtmlChange(updatedHtml);
   };
 
@@ -1597,50 +1835,77 @@ const Step3PreEdit: React.FC<{
               onClick={() => {
                 const iframe = iframeRef.current;
                 const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                if (iframeDoc && undoStackRef.current.length > 0) {
-                  // 현재 상태를 redo stack에 저장
-                  const currentHtml = iframeDoc.documentElement.outerHTML;
-                  redoStackRef.current.push(currentHtml);
-                  
-                  // undo stack에서 이전 상태 가져오기
-                  const previousHtml = undoStackRef.current.pop() || '';
-                  
-                  // iframe에 이전 HTML 적용
-                  iframeDoc.open();
-                  iframeDoc.write(previousHtml);
-                  iframeDoc.close();
-                  
-                  // currentHtmlRef 업데이트
-                  currentHtmlRef.current = previousHtml;
-                  onHtmlChange(previousHtml);
-                  
-                  // 모드에 따라 다시 초기화
-                  setTimeout(() => {
-                    if (mode === 'text') {
-                      const editableElements = iframeDoc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, div, li, td, th, label, a, button, article, section, header, footer, main, aside');
-                      editableElements.forEach((el) => {
-                        if (el.tagName && !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName)) {
-                          (el as HTMLElement).contentEditable = 'true';
-                          (el as HTMLElement).style.cursor = 'text';
-                          (el as HTMLElement).style.outline = 'none';
-                        }
-                      });
-                    } else if (mode === 'component') {
+                if (!iframeDoc) return;
+
+                // ⭐ 모드에 따라 다른 undo 동작
+                if (mode === 'spacing' || mode === 'spacing-all') {
+                  // 공백 제거 모드: 공백 제거 undo stack 사용
+                  if (spacingUndoStackRef.current.length > 0) {
+                    // 현재 상태를 redo stack에 저장
+                    const currentHtml = iframeDoc.documentElement.outerHTML;
+                    spacingRedoStackRef.current.push(currentHtml);
+                    
+                    // undo stack에서 이전 상태 가져오기
+                    const previousHtml = spacingUndoStackRef.current.pop() || '';
+                    
+                    // iframe에 이전 HTML 적용
+                    iframeDoc.open();
+                    iframeDoc.write(previousHtml);
+                    iframeDoc.close();
+                    
+                    // currentHtmlRef 업데이트
+                    currentHtmlRef.current = previousHtml;
+                    spacingCurrentHtmlRef.current = previousHtml;
+                    onHtmlChange(previousHtml);
+                    
+                    // 공백 제거 모드 다시 초기화
+                    setTimeout(() => {
+                      // 공백 제거 모드 재활성화는 useEffect에서 처리됨
+                    }, 0);
+                    
+                    console.log('↶ 공백 제거 실행 취소 완료. 남은 undo:', spacingUndoStackRef.current.length);
+                  } else {
+                    console.log('⚠️ 공백 제거 undo stack이 비어있습니다');
+                  }
+                } else if (mode === 'component') {
+                  // 컴포넌트 편집 모드: 컴포넌트 편집 undo stack 사용
+                  if (undoStackRef.current.length > 0) {
+                    // 현재 상태를 redo stack에 저장
+                    const currentHtml = iframeDoc.documentElement.outerHTML;
+                    redoStackRef.current.push(currentHtml);
+                    
+                    // undo stack에서 이전 상태 가져오기
+                    const previousHtml = undoStackRef.current.pop() || '';
+                    
+                    // iframe에 이전 HTML 적용
+                    iframeDoc.open();
+                    iframeDoc.write(previousHtml);
+                    iframeDoc.close();
+                    
+                    // currentHtmlRef 업데이트
+                    currentHtmlRef.current = previousHtml;
+                    onHtmlChange(previousHtml);
+                    
+                    // 컴포넌트 편집 모드 다시 초기화
+                    setTimeout(() => {
                       const editableElements = iframeDoc.querySelectorAll('[contenteditable="true"]');
                       editableElements.forEach((el) => {
                         (el as HTMLElement).contentEditable = 'false';
                         (el as HTMLElement).style.cursor = 'default';
                       });
-                    }
-                  }, 0);
-                  
-                  console.log('↶ 실행 취소 완료. 남은 undo:', undoStackRef.current.length);
-                } else if (mode === 'text' && iframeDoc) {
-                  // 텍스트 모드에서는 브라우저 기본 undo 사용
+                    }, 0);
+                    
+                    console.log('↶ 컴포넌트 편집 실행 취소 완료. 남은 undo:', undoStackRef.current.length);
+                  } else {
+                    console.log('⚠️ 컴포넌트 편집 undo stack이 비어있습니다');
+                  }
+                } else if (mode === 'text') {
+                  // 텍스트 편집 모드: 브라우저 기본 undo 사용 (텍스트 변경만)
                   iframeDoc.execCommand('undo', false);
                   const updatedHtml = iframeDoc.documentElement.outerHTML;
                   currentHtmlRef.current = updatedHtml;
                   onHtmlChange(updatedHtml);
+                  console.log('↶ 텍스트 편집 실행 취소 완료 (브라우저 기본 undo)');
                 }
               }}
               style={{ fontSize: '12px', padding: '4px 8px' }}
@@ -1652,50 +1917,77 @@ const Step3PreEdit: React.FC<{
               onClick={() => {
                 const iframe = iframeRef.current;
                 const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                if (iframeDoc && redoStackRef.current.length > 0) {
-                  // 현재 상태를 undo stack에 저장
-                  const currentHtml = iframeDoc.documentElement.outerHTML;
-                  undoStackRef.current.push(currentHtml);
-                  
-                  // redo stack에서 다음 상태 가져오기
-                  const nextHtml = redoStackRef.current.pop() || '';
-                  
-                  // iframe에 다음 HTML 적용
-                  iframeDoc.open();
-                  iframeDoc.write(nextHtml);
-                  iframeDoc.close();
-                  
-                  // currentHtmlRef 업데이트
-                  currentHtmlRef.current = nextHtml;
-                  onHtmlChange(nextHtml);
-                  
-                  // 모드에 따라 다시 초기화
-                  setTimeout(() => {
-                    if (mode === 'text') {
-                      const editableElements = iframeDoc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, div, li, td, th, label, a, button, article, section, header, footer, main, aside');
-                      editableElements.forEach((el) => {
-                        if (el.tagName && !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName)) {
-                          (el as HTMLElement).contentEditable = 'true';
-                          (el as HTMLElement).style.cursor = 'text';
-                          (el as HTMLElement).style.outline = 'none';
-                        }
-                      });
-                    } else if (mode === 'component') {
+                if (!iframeDoc) return;
+
+                // ⭐ 모드에 따라 다른 redo 동작
+                if (mode === 'spacing' || mode === 'spacing-all') {
+                  // 공백 제거 모드: 공백 제거 redo stack 사용
+                  if (spacingRedoStackRef.current.length > 0) {
+                    // 현재 상태를 undo stack에 저장
+                    const currentHtml = iframeDoc.documentElement.outerHTML;
+                    spacingUndoStackRef.current.push(currentHtml);
+                    
+                    // redo stack에서 다음 상태 가져오기
+                    const nextHtml = spacingRedoStackRef.current.pop() || '';
+                    
+                    // iframe에 다음 HTML 적용
+                    iframeDoc.open();
+                    iframeDoc.write(nextHtml);
+                    iframeDoc.close();
+                    
+                    // currentHtmlRef 업데이트
+                    currentHtmlRef.current = nextHtml;
+                    spacingCurrentHtmlRef.current = nextHtml;
+                    onHtmlChange(nextHtml);
+                    
+                    // 공백 제거 모드 다시 초기화
+                    setTimeout(() => {
+                      // 공백 제거 모드 재활성화는 useEffect에서 처리됨
+                    }, 0);
+                    
+                    console.log('↷ 공백 제거 다시 실행 완료. 남은 redo:', spacingRedoStackRef.current.length);
+                  } else {
+                    console.log('⚠️ 공백 제거 redo stack이 비어있습니다');
+                  }
+                } else if (mode === 'component') {
+                  // 컴포넌트 편집 모드: 컴포넌트 편집 redo stack 사용
+                  if (redoStackRef.current.length > 0) {
+                    // 현재 상태를 undo stack에 저장
+                    const currentHtml = iframeDoc.documentElement.outerHTML;
+                    undoStackRef.current.push(currentHtml);
+                    
+                    // redo stack에서 다음 상태 가져오기
+                    const nextHtml = redoStackRef.current.pop() || '';
+                    
+                    // iframe에 다음 HTML 적용
+                    iframeDoc.open();
+                    iframeDoc.write(nextHtml);
+                    iframeDoc.close();
+                    
+                    // currentHtmlRef 업데이트
+                    currentHtmlRef.current = nextHtml;
+                    onHtmlChange(nextHtml);
+                    
+                    // 컴포넌트 편집 모드 다시 초기화
+                    setTimeout(() => {
                       const editableElements = iframeDoc.querySelectorAll('[contenteditable="true"]');
                       editableElements.forEach((el) => {
                         (el as HTMLElement).contentEditable = 'false';
                         (el as HTMLElement).style.cursor = 'default';
                       });
-                    }
-                  }, 0);
-                  
-                  console.log('↷ 다시 실행 완료. 남은 redo:', redoStackRef.current.length);
-                } else if (mode === 'text' && iframeDoc) {
-                  // 텍스트 모드에서는 브라우저 기본 redo 사용
+                    }, 0);
+                    
+                    console.log('↷ 컴포넌트 편집 다시 실행 완료. 남은 redo:', redoStackRef.current.length);
+                  } else {
+                    console.log('⚠️ 컴포넌트 편집 redo stack이 비어있습니다');
+                  }
+                } else if (mode === 'text') {
+                  // 텍스트 편집 모드: 브라우저 기본 redo 사용 (텍스트 변경만)
                   iframeDoc.execCommand('redo', false);
                   const updatedHtml = iframeDoc.documentElement.outerHTML;
                   currentHtmlRef.current = updatedHtml;
                   onHtmlChange(updatedHtml);
+                  console.log('↷ 텍스트 편집 다시 실행 완료 (브라우저 기본 redo)');
                 }
               }}
               style={{ fontSize: '12px', padding: '4px 8px' }}
@@ -2485,6 +2777,10 @@ const Step5ParallelEdit: React.FC<{
   const undoStackRef = React.useRef<string[]>([]);
   const redoStackRef = React.useRef<string[]>([]);
   const currentHtmlRef = React.useRef<string>('');
+  // 컴포넌트 클릭 핸들러 저장 (제거를 위해)
+  const componentClickHandlersRef = React.useRef<Map<HTMLElement, (e: Event) => void>>(new Map());
+  // 링크 클릭 방지 핸들러 저장 (제거를 위해)
+  const linkClickHandlersRef = React.useRef<Map<HTMLElement, (e: Event) => void>>(new Map());
 
   // 패널 접기/펼치기
   const togglePanel = (panelId: string) => {
@@ -2601,18 +2897,151 @@ const Step5ParallelEdit: React.FC<{
       // 텍스트 편집 모드
       console.log('📝 [NewTranslation Step5] 텍스트 편집 모드 활성화');
 
-      // contentEditable 설정
-      const textElements = iframeDoc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, td, th, label, button');
-      textElements.forEach(el => {
-        (el as HTMLElement).contentEditable = 'true';
-        (el as HTMLElement).style.cursor = 'text';
+      // ⭐ 컴포넌트 클릭 핸들러 제거
+      componentClickHandlersRef.current.forEach((handler, el) => {
+        el.removeEventListener('click', handler, true);
+      });
+      componentClickHandlersRef.current.clear();
+
+      // ⭐ 모든 요소의 검은색 테두리 제거 (computed style 기반)
+      const allElements = iframeDoc.querySelectorAll('*');
+      allElements.forEach(el => {
+        const htmlEl = el as HTMLElement;
+        const computedStyle = iframeDoc.defaultView?.getComputedStyle(htmlEl);
+        if (computedStyle) {
+          const outline = computedStyle.outline;
+          const outlineColor = computedStyle.outlineColor;
+          if (outline && outline !== 'none' && (
+            outlineColor === 'rgb(0, 0, 0)' || 
+            outlineColor === '#000000' || 
+            outlineColor === 'black' ||
+            outline.includes('3px solid') ||
+            outline.includes('black')
+          )) {
+            htmlEl.style.outline = '';
+            htmlEl.style.outlineOffset = '';
+          }
+        }
+        if (htmlEl.style.outline && (
+          htmlEl.style.outline.includes('3px solid') ||
+          htmlEl.style.outline.includes('black') ||
+          htmlEl.style.outline.includes('#000')
+        )) {
+          htmlEl.style.outline = '';
+          htmlEl.style.outlineOffset = '';
+        }
       });
 
-      const containerElements = iframeDoc.querySelectorAll('div, section, article, header, footer, main, aside, nav, ul, ol, table');
-      containerElements.forEach(el => {
-        (el as HTMLElement).contentEditable = 'false';
-        (el as HTMLElement).style.cursor = 'default';
+      // ⭐ 컴포넌트 편집 모드 CSS 규칙 제거 또는 오버라이드
+      const editorStyles = iframeDoc.getElementById('editor-styles');
+      if (editorStyles) {
+        editorStyles.remove();
+      }
+
+      // ⭐ 컴포넌트 선택 스타일을 완전히 무효화하는 CSS 추가
+      const textEditOverrideStyle = iframeDoc.createElement('style');
+      textEditOverrideStyle.id = 'text-edit-override-styles';
+      textEditOverrideStyle.textContent = `
+        .component-selected,
+        [data-component-editable] {
+          outline: none !important;
+          box-shadow: none !important;
+          background-color: transparent !important;
+          outline-offset: 0 !important;
+        }
+        * {
+          outline: none !important;
+        }
+        *:focus {
+          outline: none !important;
+        }
+      `;
+      const existingOverride = iframeDoc.getElementById('text-edit-override-styles');
+      if (existingOverride) {
+        existingOverride.remove();
+      }
+      iframeDoc.head.appendChild(textEditOverrideStyle);
+
+      // ⭐ contentEditable 설정 (cross-element selection을 위해)
+      if (iframeDoc.body) {
+        const style = iframeDoc.createElement('style');
+        style.id = 'text-edit-styles';
+        style.textContent = `
+          body, body * {
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+            cursor: text !important;
+          }
+        `;
+        const existingStyle = iframeDoc.getElementById('text-edit-styles');
+        if (existingStyle) {
+          existingStyle.remove();
+        }
+        iframeDoc.head.appendChild(style);
+        
+        iframeDoc.body.contentEditable = 'true';
+        iframeDoc.body.style.cursor = 'text';
+        
+        const textElements = iframeDoc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, td, th, label, button, div, section, article');
+      textElements.forEach(el => {
+          const htmlEl = el as HTMLElement;
+          if (!['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(htmlEl.tagName)) {
+            htmlEl.contentEditable = 'true';
+            htmlEl.style.cursor = 'text';
+            htmlEl.style.outline = 'none';
+          }
+        });
+        
+        // ⭐ currentHtmlRef 초기화 (텍스트 편집 모드)
+        const initialHtml = iframeDoc.documentElement.outerHTML;
+        currentHtmlRef.current = initialHtml;
+        console.log('💾 Step 5 텍스트 편집 모드 currentHtmlRef 초기화 완료');
+      }
+
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      // 기존 링크 클릭 핸들러 제거
+      linkClickHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener('click', handler, true);
       });
+      linkClickHandlersRef.current.clear();
+      
+      // 모든 링크에 클릭 방지 핸들러 추가
+      const allLinks = iframeDoc.querySelectorAll('a');
+      const preventLinkNavigation = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      };
+      
+      allLinks.forEach(link => {
+        const htmlLink = link as HTMLElement;
+        htmlLink.addEventListener('click', preventLinkNavigation, true);
+        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        // 링크 스타일 변경 (편집 모드임을 표시)
+        htmlLink.style.cursor = 'text';
+        htmlLink.style.textDecoration = 'none';
+      });
+      
+      // 링크 스타일 CSS 추가
+      const linkStyle = iframeDoc.createElement('style');
+      linkStyle.id = 'text-edit-link-style';
+      linkStyle.textContent = `
+        a {
+          cursor: text !important;
+          pointer-events: auto !important;
+        }
+        a:hover {
+          text-decoration: underline !important;
+        }
+      `;
+      const existingLinkStyle = iframeDoc.getElementById('text-edit-link-style');
+      if (existingLinkStyle) {
+        existingLinkStyle.remove();
+      }
+      iframeDoc.head.appendChild(linkStyle);
 
       // ⭐ Step 3와 동일한 방식으로 키보드 이벤트 처리
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -2620,19 +3049,43 @@ const Step5ParallelEdit: React.FC<{
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
           e.preventDefault();
           e.stopImmediatePropagation();
-          iframeDoc.execCommand('undo', false);
+          
+          // ⭐ 포커스 확인
+          const activeElement = iframeDoc.activeElement;
+          if (!activeElement || activeElement === iframeDoc.body) {
+            iframeDoc.body.focus();
+          }
+          
+          const success = iframeDoc.execCommand('undo', false);
+          if (success) {
           const updatedHtml = iframeDoc.documentElement.outerHTML;
+            currentHtmlRef.current = updatedHtml;
           onTranslatedChange(updatedHtml);
           console.log('↩️ Undo (STEP 5 텍스트 편집)');
+          } else {
+            console.warn('⚠️ execCommand undo 실패 (키보드 단축키)');
+          }
         }
         // Cmd+Shift+Z (Mac) 또는 Ctrl+Y (Windows) - Redo
         else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
           e.preventDefault();
           e.stopImmediatePropagation();
-          iframeDoc.execCommand('redo', false);
+          
+          // ⭐ 포커스 확인
+          const activeElement = iframeDoc.activeElement;
+          if (!activeElement || activeElement === iframeDoc.body) {
+            iframeDoc.body.focus();
+          }
+          
+          const success = iframeDoc.execCommand('redo', false);
+          if (success) {
           const updatedHtml = iframeDoc.documentElement.outerHTML;
+            currentHtmlRef.current = updatedHtml;
           onTranslatedChange(updatedHtml);
           console.log('↪️ Redo (STEP 5 텍스트 편집)');
+          } else {
+            console.warn('⚠️ execCommand redo 실패 (키보드 단축키)');
+          }
         }
         
         // ⭐ 백스페이스 키 처리 (브라우저 기본 동작 허용) - Step 3와 동일
@@ -2665,6 +3118,61 @@ const Step5ParallelEdit: React.FC<{
       // 컴포넌트 편집 모드
       console.log('🧩 [NewTranslation Step5] 컴포넌트 편집 모드 활성화');
 
+      // ⭐ 1. 브라우저의 텍스트 selection clear
+      const selection = iframeDoc.defaultView?.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+      }
+      
+      // ⭐ 2. selectedElements state 초기화
+      setSelectedElements([]);
+      
+      // ⭐ 3. 모든 .component-selected 클래스 제거 및 기존 핸들러 제거
+      const existingSelected = iframeDoc.querySelectorAll('.component-selected');
+      existingSelected.forEach(el => {
+        const htmlEl = el as HTMLElement;
+        htmlEl.classList.remove('component-selected');
+        htmlEl.style.outline = '';
+        htmlEl.style.boxShadow = '';
+        htmlEl.style.backgroundColor = '';
+        htmlEl.style.outlineOffset = '';
+        
+        // 기존 핸들러 제거
+        const handler = componentClickHandlersRef.current.get(htmlEl);
+        if (handler) {
+          htmlEl.removeEventListener('click', handler, true);
+          componentClickHandlersRef.current.delete(htmlEl);
+        }
+      });
+      
+      // 모든 컴포넌트 클릭 핸들러 제거
+      componentClickHandlersRef.current.forEach((handler, el) => {
+        el.removeEventListener('click', handler, true);
+      });
+      componentClickHandlersRef.current.clear();
+
+      // ⭐ 4. 텍스트 편집 모드 스타일 태그 제거
+      const textEditOverrideStyle = iframeDoc.getElementById('text-edit-override-styles');
+      if (textEditOverrideStyle) {
+        textEditOverrideStyle.remove();
+      }
+      const textEditStyle = iframeDoc.getElementById('text-edit-styles');
+      if (textEditStyle) {
+        textEditStyle.remove();
+      }
+      
+      // ⭐ 5. 링크 클릭 핸들러 제거
+      linkClickHandlersRef.current.forEach((handler, link) => {
+        link.removeEventListener('click', handler, true);
+      });
+      linkClickHandlersRef.current.clear();
+      
+      // 링크 스타일 태그 제거
+      const linkStyle = iframeDoc.getElementById('text-edit-link-style');
+      if (linkStyle) {
+        linkStyle.remove();
+      }
+
       // contentEditable 비활성화
       const allEditableElements = iframeDoc.querySelectorAll('[contenteditable]');
       allEditableElements.forEach(el => {
@@ -2689,7 +3197,8 @@ const Step5ParallelEdit: React.FC<{
         h3[data-component-editable],
         h4[data-component-editable],
         h5[data-component-editable],
-        h6[data-component-editable] {
+        h6[data-component-editable],
+        a[data-component-editable] {
           outline: 1px dashed #C0C0C0 !important;
           cursor: pointer !important;
         }
@@ -2699,7 +3208,8 @@ const Step5ParallelEdit: React.FC<{
         p[data-component-editable]:hover,
         h1[data-component-editable]:hover,
         h2[data-component-editable]:hover,
-        h3[data-component-editable]:hover {
+        h3[data-component-editable]:hover,
+        a[data-component-editable]:hover {
           outline: 2px solid #808080 !important;
         }
         .component-selected {
@@ -2732,17 +3242,14 @@ const Step5ParallelEdit: React.FC<{
       `;
       iframeDoc.head.appendChild(style);
 
-      // 클릭 가능한 컴포넌트 표시
-      const componentElements = iframeDoc.querySelectorAll('div, section, article, header, footer, main, aside, nav, p, h1, h2, h3, h4, h5, h6');
-      componentElements.forEach(el => {
-        (el as HTMLElement).setAttribute('data-component-editable', 'true');
-      });
+      // 클릭 가능한 컴포넌트 표시 (a 태그도 포함)
+      const componentElements = iframeDoc.querySelectorAll('div, section, article, header, footer, main, aside, nav, p, h1, h2, h3, h4, h5, h6, a');
 
       // Cmd+Z / Cmd+Y 지원 (컴포넌트 편집 모드) - 커스텀 Undo Stack 사용
       const handleKeydown = (e: KeyboardEvent) => {
         // Cmd+Z (Mac) 또는 Ctrl+Z (Windows) - Undo
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-          e.preventDefault();
+          e.preventDefault(); // ⭐ 항상 preventDefault 호출 (undo stack이 비어있어도 시스템 단축키 방지)
           e.stopImmediatePropagation();
           
           if (undoStackRef.current.length > 0) {
@@ -2763,14 +3270,15 @@ const Step5ParallelEdit: React.FC<{
             onTranslatedChange(previousHtml);
             setSelectedElements([]);
             
-            // 다시 컴포넌트 편집 모드 활성화 (이벤트 리스너 재등록은 useEffect에서 처리)
+            // ⭐ translatedHtml이 의존성 배열에 추가되어 useEffect가 자동으로 재실행됨 (Step 3 방식)
           } else {
             console.log('⚠️ Undo stack이 비어있습니다 (STEP 5)');
+            // ⭐ undo stack이 비어있어도 preventDefault는 이미 호출됨 (시스템 단축키 방지)
           }
         }
         // Cmd+Shift+Z (Mac) 또는 Ctrl+Y (Windows) - Redo
         else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-          e.preventDefault();
+          e.preventDefault(); // ⭐ 항상 preventDefault 호출 (redo stack이 비어있어도 시스템 단축키 방지)
           e.stopImmediatePropagation();
           
           if (redoStackRef.current.length > 0) {
@@ -2790,8 +3298,11 @@ const Step5ParallelEdit: React.FC<{
             
             onTranslatedChange(nextHtml);
             setSelectedElements([]);
+            
+            // ⭐ translatedHtml이 의존성 배열에 추가되어 useEffect가 자동으로 재실행됨 (Step 3 방식)
           } else {
             console.log('⚠️ Redo stack이 비어있습니다');
+            // ⭐ redo stack이 비어있어도 preventDefault는 이미 호출됨 (시스템 단축키 방지)
           }
         }
       };
@@ -2815,30 +3326,79 @@ const Step5ParallelEdit: React.FC<{
         const target = e.target as HTMLElement;
         if (!target || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'HEAD', 'BODY'].includes(target.tagName)) return;
 
-        const isSelected = target.classList.contains('component-selected');
+        // ⭐ 링크 내부 요소를 클릭한 경우 가장 가까운 편집 가능한 요소 찾기
+        const editableElement = target.closest('[data-component-editable]') as HTMLElement;
+        if (!editableElement) {
+          console.log('⚠️ 편집 가능한 요소를 찾을 수 없습니다:', target.tagName);
+          return;
+        }
+
+        const isSelected = editableElement.classList.contains('component-selected');
 
         if (isSelected) {
-          target.classList.remove('component-selected');
-          target.style.outline = '1px dashed #C0C0C0';
-          target.style.boxShadow = 'none';
-          setSelectedElements(prev => prev.filter(el => el !== target));
+          editableElement.classList.remove('component-selected');
+          editableElement.style.outline = '1px dashed #C0C0C0';
+          editableElement.style.boxShadow = 'none';
+          setSelectedElements(prev => prev.filter(el => el !== editableElement));
         } else {
-          target.classList.add('component-selected');
-          target.style.outline = '3px solid #000000';
-          target.style.boxShadow = 'none';
-          setSelectedElements(prev => [...prev, target]);
+          editableElement.classList.add('component-selected');
+          editableElement.style.outline = '3px solid #000000';
+          editableElement.style.boxShadow = 'none';
+          setSelectedElements(prev => [...prev, editableElement]);
         }
       };
 
-      componentElements.forEach(el => {
-        el.addEventListener('click', handleComponentClick);
+      // ⭐ Step 3와 동일한 방식으로 이벤트 리스너 등록 (capture phase)
+      componentElements.forEach((el) => {
+        if (el.tagName && !['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) {
+          const htmlEl = el as HTMLElement;
+          htmlEl.setAttribute('data-component-editable', 'true');
+          htmlEl.style.cursor = 'pointer';
+          htmlEl.style.outline = '1px dashed #C0C0C0';
+          
+          // 기존 핸들러가 있으면 제거
+          const existingHandler = componentClickHandlersRef.current.get(htmlEl);
+          if (existingHandler) {
+            htmlEl.removeEventListener('click', existingHandler, true);
+          }
+          
+          // 클릭 이벤트 리스너 추가 및 저장 (capture phase)
+          htmlEl.addEventListener('click', handleComponentClick, true);
+          componentClickHandlersRef.current.set(htmlEl, handleComponentClick);
+        }
       });
+      
+      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
+      const allLinks = iframeDoc.querySelectorAll('a');
+      const preventLinkNavigation = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+      };
+      
+      allLinks.forEach(link => {
+        const htmlLink = link as HTMLElement;
+        // 기존 핸들러가 있으면 제거
+        const existingLinkHandler = linkClickHandlersRef.current.get(htmlLink);
+        if (existingLinkHandler) {
+          htmlLink.removeEventListener('click', existingLinkHandler, true);
+        }
+        htmlLink.addEventListener('click', preventLinkNavigation, true);
+        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        htmlLink.style.cursor = 'pointer';
+      });
+      
+      console.log('✅ Step 5 컴포넌트 클릭 리스너 추가 완료:', componentElements.length, '개');
+      console.log('✅ Step 5 링크 클릭 방지 핸들러 추가 완료:', allLinks.length, '개');
+      
+      console.log('✅ Step 5 컴포넌트 편집 모드 링크 클릭 방지 핸들러 추가 완료:', allLinks.length, '개');
     }
 
     return () => {
       // 클린업: 이벤트 리스너는 모드 변경 시 제거됨
     };
-  }, [mode, isTranslatedInitialized]); // ⭐ Step 3처럼 onTranslatedChange 제거
+  }, [mode, isTranslatedInitialized, translatedHtml]); // ⭐ Step 3 방식: translatedHtml 추가하여 undo/redo 후 자동 재활성화
 
   // 컴포넌트 삭제
   const handleDelete = () => {
@@ -3020,10 +3580,54 @@ const Step5ParallelEdit: React.FC<{
                             onClick={() => {
                               const iframe = translatedIframeRef.current;
                               const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                              if (iframeDoc) {
-                                iframeDoc.execCommand('undo', false);
+                              if (!iframeDoc) return;
+
+                              // ⭐ 모드에 따라 다른 undo 동작
+                              if (mode === 'component') {
+                                // 컴포넌트 편집 모드: 컴포넌트 편집 undo stack 사용
+                                if (undoStackRef.current.length > 0) {
+                                  // 현재 상태를 redo stack에 저장
+                                  const currentHtml = iframeDoc.documentElement.outerHTML;
+                                  redoStackRef.current.push(currentHtml);
+                                  
+                                  // undo stack에서 이전 상태 가져오기
+                                  const previousHtml = undoStackRef.current.pop() || '';
+                                  
+                                  // iframe에 이전 HTML 적용
+                                  iframeDoc.open();
+                                  iframeDoc.write(previousHtml);
+                                  iframeDoc.close();
+                                  
+                                  // currentHtmlRef 업데이트
+                                  currentHtmlRef.current = previousHtml;
+                                  onTranslatedChange(previousHtml);
+                                  setSelectedElements([]);
+                                  
+                                  // ⭐ translatedHtml이 의존성 배열에 추가되어 useEffect가 자동으로 재실행됨 (Step 3 방식)
+                                  console.log('↶ Step 5 컴포넌트 편집 실행 취소 완료. 남은 undo:', undoStackRef.current.length);
+                                } else {
+                                  console.log('⚠️ Step 5 컴포넌트 편집 undo stack이 비어있습니다');
+                                  // ⭐ undo stack이 비어있어도 아무 동작 안 함 (시스템 단축키 실행 방지)
+                                }
+                              } else if (mode === 'text') {
+                                // 텍스트 편집 모드: 브라우저 기본 undo 사용 (텍스트 변경만)
+                                // ⭐ 포커스가 iframe 내부에 있는지 확인
+                                const activeElement = iframeDoc.activeElement;
+                                if (!activeElement || activeElement === iframeDoc.body) {
+                                  // 포커스가 없으면 body에 포커스
+                                  iframeDoc.body.focus();
+                                }
+                                
+                                // execCommand 실행
+                                const success = iframeDoc.execCommand('undo', false);
+                                if (success) {
                                 const updatedHtml = iframeDoc.documentElement.outerHTML;
+                                  currentHtmlRef.current = updatedHtml;
                                 onTranslatedChange(updatedHtml);
+                                  console.log('↶ Step 5 텍스트 편집 실행 취소 완료 (브라우저 기본 undo)');
+                                } else {
+                                  console.warn('⚠️ execCommand undo 실패 - 브라우저 undo history가 없을 수 있습니다');
+                                }
                               }
                             }}
                             style={{ fontSize: '11px', padding: '4px 8px' }}
@@ -3036,10 +3640,42 @@ const Step5ParallelEdit: React.FC<{
                             onClick={() => {
                               const iframe = translatedIframeRef.current;
                               const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                              if (iframeDoc) {
+                              if (!iframeDoc) return;
+
+                              // ⭐ 모드에 따라 다른 redo 동작
+                              if (mode === 'component') {
+                                // 컴포넌트 편집 모드: 컴포넌트 편집 redo stack 사용
+                                if (redoStackRef.current.length > 0) {
+                                  // 현재 상태를 undo stack에 저장
+                                  const currentHtml = iframeDoc.documentElement.outerHTML;
+                                  undoStackRef.current.push(currentHtml);
+                                  
+                                  // redo stack에서 다음 상태 가져오기
+                                  const nextHtml = redoStackRef.current.pop() || '';
+                                  
+                                  // iframe에 다음 HTML 적용
+                                  iframeDoc.open();
+                                  iframeDoc.write(nextHtml);
+                                  iframeDoc.close();
+                                  
+                                  // currentHtmlRef 업데이트
+                                  currentHtmlRef.current = nextHtml;
+                                  onTranslatedChange(nextHtml);
+                                  setSelectedElements([]);
+                                  
+                                  // ⭐ translatedHtml이 의존성 배열에 추가되어 useEffect가 자동으로 재실행됨 (Step 3 방식)
+                                  console.log('↷ Step 5 컴포넌트 편집 다시 실행 완료. 남은 redo:', redoStackRef.current.length);
+                                } else {
+                                  console.log('⚠️ Step 5 컴포넌트 편집 redo stack이 비어있습니다');
+                                  // ⭐ redo stack이 비어있어도 아무 동작 안 함 (시스템 단축키 실행 방지)
+                                }
+                              } else if (mode === 'text') {
+                                // 텍스트 편집 모드: 브라우저 기본 redo 사용 (텍스트 변경만)
                                 iframeDoc.execCommand('redo', false);
                                 const updatedHtml = iframeDoc.documentElement.outerHTML;
+                                currentHtmlRef.current = updatedHtml;
                                 onTranslatedChange(updatedHtml);
+                                console.log('↷ Step 5 텍스트 편집 다시 실행 완료 (브라우저 기본 redo)');
                               }
                             }}
                             style={{ fontSize: '11px', padding: '4px 8px' }}
@@ -3094,12 +3730,44 @@ const NewTranslation: React.FC = () => {
   const { user } = useUser();
   const { setIsCollapsed } = useSidebar();
   const [currentStep, setCurrentStep] = useState(1);
-  const [draft, setDraft] = useState<TranslationDraft>({
+  // ⭐ localStorage에서 draft 복원 (뒤로가기 대응)
+  const loadDraftFromStorage = (): TranslationDraft | null => {
+    try {
+      const saved = localStorage.getItem('transflow-draft');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log('📦 localStorage에서 draft 복원:', parsed);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('⚠️ localStorage에서 draft 복원 실패:', e);
+    }
+    return null;
+  };
+
+  // ⭐ localStorage에 draft 저장
+  const saveDraftToStorage = (draftToSave: TranslationDraft) => {
+    try {
+      localStorage.setItem('transflow-draft', JSON.stringify(draftToSave));
+      console.log('💾 localStorage에 draft 저장 완료');
+    } catch (e) {
+      console.warn('⚠️ localStorage에 draft 저장 실패:', e);
+    }
+  };
+
+  // 초기 draft 상태 (localStorage에서 복원 또는 기본값)
+  const [draft, setDraft] = useState<TranslationDraft>(() => {
+    const saved = loadDraftFromStorage();
+    if (saved) {
+      return saved;
+    }
+    return {
     url: '',
     selectedAreas: [],
     originalHtml: '',
     originalHtmlWithIds: '', // STEP 2의 iframe HTML (data-transflow-id 포함)
     state: DocumentState.DRAFT,
+    };
   });
   const [documentId, setDocumentId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -3129,6 +3797,14 @@ const NewTranslation: React.FC = () => {
       navigate('/dashboard');
     }
   }, [user, isAuthorized, navigate]);
+
+  // ⭐ draft가 변경될 때마다 localStorage에 저장 (뒤로가기 대응)
+  useEffect(() => {
+    // 빈 draft는 저장하지 않음
+    if (draft.url || draft.originalHtml || draft.selectedAreas.length > 0) {
+      saveDraftToStorage(draft);
+    }
+  }, [draft]);
 
   // 변경 사항 추적
   useEffect(() => {
@@ -3430,9 +4106,18 @@ const NewTranslation: React.FC = () => {
         console.log('✅ AI 번역 버전 저장 완료');
       }
 
-      // 4. 완료 후 문서 관리 페이지로 이동
+      // 4. 완료 후 localStorage 클리어 및 문서 관리 페이지로 이동
       const statusText = data.status === 'PENDING_TRANSLATION' ? '번역 대기 상태로' : '초안 상태로';
       setSaveError(null);
+      
+      // ⭐ 문서 생성 완료 시 localStorage 클리어
+      try {
+        localStorage.removeItem('transflow-draft');
+        console.log('🗑️ localStorage draft 클리어 완료');
+      } catch (e) {
+        console.warn('⚠️ localStorage 클리어 실패:', e);
+      }
+      
       navigate('/documents');
     } catch (error: any) {
       console.error('❌ 문서 생성 실패:', error);
