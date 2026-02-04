@@ -14,6 +14,7 @@ import {
   Paragraph,
 } from '../utils/paragraphUtils';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Palette } from 'lucide-react';
 import './TranslationWork.css';
 
 export default function TranslationWork() {
@@ -1902,7 +1903,64 @@ export default function TranslationWork() {
                                 onChange={(e) => {
                                   const iframeDoc = myTranslationIframeRef.current?.contentDocument;
                                   if (iframeDoc && e.target.value) {
-                                    iframeDoc.execCommand('fontSize', false, e.target.value);
+                                    const fontSize = e.target.value;
+                                    const selection = iframeDoc.getSelection();
+                                    
+                                    // 선택된 텍스트가 있는지 확인
+                                    if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
+                                      const range = selection.getRangeAt(0);
+                                      const selectedText = range.toString();
+                                      
+                                      // execCommand('insertHTML')을 사용하여 undo 스택에 기록
+                                      // 이 방법이 가장 안정적으로 undo/redo를 지원함
+                                      const spanHtml = `<span style="font-size: ${fontSize}pt;">${selectedText}</span>`;
+                                      
+                                      try {
+                                        // insertHTML이 지원되는 브라우저
+                                        iframeDoc.execCommand('insertHTML', false, spanHtml);
+                                      } catch (err) {
+                                        // insertHTML이 지원되지 않으면 수동으로 삽입
+                                        // 하지만 이 경우 undo 스택에 기록되지 않을 수 있음
+                                        range.deleteContents();
+                                        const tempDiv = iframeDoc.createElement('div');
+                                        tempDiv.innerHTML = spanHtml;
+                                        const fragment = iframeDoc.createDocumentFragment();
+                                        while (tempDiv.firstChild) {
+                                          fragment.appendChild(tempDiv.firstChild);
+                                        }
+                                        range.insertNode(fragment);
+                                        
+                                        // 선택 영역을 새로 삽입된 span으로 이동
+                                        range.setStartAfter(fragment.lastChild || range.startContainer);
+                                        range.collapse(false);
+                                        selection.removeAllRanges();
+                                        selection.addRange(range);
+                                      }
+                                    } else {
+                                      // 선택된 텍스트가 없으면 execCommand('fontSize') 사용
+                                      // 다음 입력에 적용될 스타일 설정
+                                      iframeDoc.execCommand('fontSize', false, '3');
+                                      
+                                      // 생성된 <font> 태그를 찾아서 변환
+                                      setTimeout(() => {
+                                        const fontSizeElements = iframeDoc.querySelectorAll('font[size="3"]');
+                                        if (fontSizeElements.length > 0) {
+                                          const lastElement = fontSizeElements[fontSizeElements.length - 1] as HTMLElement;
+                                          lastElement.style.fontSize = `${fontSize}pt`;
+                                          lastElement.removeAttribute('size');
+                                          
+                                          // <font>를 <span>으로 교체
+                                          const span = iframeDoc.createElement('span');
+                                          span.style.fontSize = `${fontSize}pt`;
+                                          span.innerHTML = lastElement.innerHTML;
+                                          
+                                          if (lastElement.parentNode) {
+                                            lastElement.parentNode.replaceChild(span, lastElement);
+                                          }
+                                        }
+                                      }, 0);
+                                    }
+                                    
                                     e.target.value = ''; // 리셋
                                   }
                                 }}
@@ -1915,32 +1973,63 @@ export default function TranslationWork() {
                                   color: '#000000',
                                   cursor: 'pointer',
                                 }}
-                                title="글자 크기"
+                                title="글자 크기 (pt)"
                               >
                                 <option value="">크기</option>
-                                <option value="1">매우 작게</option>
-                                <option value="2">작게</option>
-                                <option value="3">보통</option>
-                                <option value="4">크게</option>
-                                <option value="5">매우 크게</option>
-                                <option value="6">특대</option>
-                                <option value="7">초특대</option>
+                                <option value="8">8pt</option>
+                                <option value="9">9pt</option>
+                                <option value="10">10pt</option>
+                                <option value="11">11pt</option>
+                                <option value="12">12pt</option>
+                                <option value="14">14pt</option>
+                                <option value="16">16pt</option>
+                                <option value="18">18pt</option>
+                                <option value="20">20pt</option>
+                                <option value="24">24pt</option>
+                                <option value="28">28pt</option>
+                                <option value="32">32pt</option>
+                                <option value="36">36pt</option>
+                                <option value="48">48pt</option>
+                                <option value="72">72pt</option>
                               </select>
-                              <input
-                                type="color"
-                                onChange={(e) => {
-                                  const iframeDoc = myTranslationIframeRef.current?.contentDocument;
-                                  if (iframeDoc) iframeDoc.execCommand('foreColor', false, e.target.value);
-                                }}
-                                style={{
-                                  width: '30px',
-                                  height: '26px',
-                                  border: '1px solid #A9A9A9',
-                                  borderRadius: '3px',
-                                  cursor: 'pointer',
-                                }}
-                                title="글자 색상"
-                              />
+                              <div style={{ position: 'relative', display: 'inline-block', width: '30px', height: '26px' }}>
+                                <input
+                                  type="color"
+                                  onChange={(e) => {
+                                    const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                    if (iframeDoc) iframeDoc.execCommand('foreColor', false, e.target.value);
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    opacity: 0,
+                                    cursor: 'pointer',
+                                    zIndex: 2,
+                                  }}
+                                  title="글자 색상"
+                                />
+                                <button
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: '#FFFFFF',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    pointerEvents: 'none',
+                                  }}
+                                  title="글자 색상"
+                                  disabled
+                                >
+                                  <Palette size={16} color="#000000" />
+                                </button>
+                              </div>
                               <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
                               <button
                                 onClick={() => {
@@ -1955,10 +2044,13 @@ export default function TranslationWork() {
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
                                   cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                                 title="왼쪽 정렬"
                               >
-                                ◀
+                                <AlignLeft size={16} />
                               </button>
                               <button
                                 onClick={() => {
@@ -1973,10 +2065,13 @@ export default function TranslationWork() {
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
                                   cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                                 title="가운데 정렬"
                               >
-                                ▣
+                                <AlignCenter size={16} />
                               </button>
                               <button
                                 onClick={() => {
@@ -1991,10 +2086,13 @@ export default function TranslationWork() {
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
                                   cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                                 title="오른쪽 정렬"
                               >
-                                ▶
+                                <AlignRight size={16} />
                               </button>
                               <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
                               <button
@@ -2010,10 +2108,13 @@ export default function TranslationWork() {
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
                                   cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                                 title="글머리 기호 목록"
                               >
-                                • 목록
+                                <List size={16} />
                               </button>
                               <button
                                 onClick={() => {
@@ -2028,10 +2129,13 @@ export default function TranslationWork() {
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
                                   cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                                 title="번호 매기기 목록"
                               >
-                                1. 목록
+                                <ListOrdered size={16} />
                               </button>
                               <button
                                 onClick={() => {
