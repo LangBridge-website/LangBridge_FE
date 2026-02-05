@@ -2781,45 +2781,72 @@ export default function TranslationWork() {
                           
                           {/* 컴포넌트 편집 모드 */}
                           {editorMode === 'component' && selectedElements.length > 0 && (
-                            <Button
-                              variant="secondary"
-                              onClick={() => {
-                                if (!myTranslationIframeRef.current) return;
-                                const iframeDoc = myTranslationIframeRef.current.contentDocument;
-                                if (!iframeDoc) return;
+                            <>
+                              <span style={{ fontSize: '11px', color: '#696969', marginRight: '4px' }}>
+                                {selectedElements.length}개 선택됨
+                              </span>
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  if (!myTranslationIframeRef.current) return;
+                                  const iframeDoc = myTranslationIframeRef.current.contentDocument;
+                                  if (!iframeDoc) return;
 
-                                // Undo Stack에 현재 상태 저장
-                                undoStackRef.current.push(currentEditorHtmlRef.current);
-                                redoStackRef.current = [];
+                                  // 선택된 요소들의 선택 상태 제거
+                                  selectedElements.forEach(el => {
+                                    el.classList.remove('component-selected');
+                                    el.style.outline = '';
+                                    el.style.boxShadow = '';
+                                    el.style.backgroundColor = '';
+                                    el.style.outlineOffset = '';
+                                  });
+                                  setSelectedElements([]);
+                                  console.log('🔄 전체 선택 취소:', selectedElements.length, '개');
+                                }}
+                                style={{ fontSize: '11px', padding: '4px 8px' }}
+                              >
+                                선택 취소
+                              </Button>
+                              <Button
+                                variant="primary"
+                                onClick={() => {
+                                  if (!myTranslationIframeRef.current) return;
+                                  const iframeDoc = myTranslationIframeRef.current.contentDocument;
+                                  if (!iframeDoc) return;
 
-                                // 선택된 요소 삭제
-                                selectedElements.forEach(el => el.remove());
-                                setSelectedElements([]);
+                                  // Undo Stack에 현재 상태 저장
+                                  undoStackRef.current.push(currentEditorHtmlRef.current);
+                                  redoStackRef.current = [];
 
-                                // 변경된 HTML 저장
-                                const updatedHtml = iframeDoc.documentElement.outerHTML;
-                                currentEditorHtmlRef.current = updatedHtml;
-                                setSavedTranslationHtml(updatedHtml);
-                                console.log('🗑️ 선택된 요소 삭제:', selectedElements.length, '개');
-                                
-                                // ⭐ 삭제 후 iframe에 포커스를 주어 키보드 단축키가 바로 작동하도록 함
-                                setTimeout(() => {
-                                  // body에 tabIndex 설정하여 포커스 가능하게 만들기
-                                  if (iframeDoc.body) {
-                                    iframeDoc.body.setAttribute('tabindex', '-1');
-                                    iframeDoc.body.focus();
-                                  }
-                                  if (myTranslationIframeRef.current?.contentWindow) {
-                                    myTranslationIframeRef.current.contentWindow.focus();
-                                  }
-                                  myTranslationIframeRef.current?.focus();
-                                  console.log('🎯 TranslationWork iframe에 포커스 설정');
-                                }, 100);
-                              }}
-                              style={{ fontSize: '11px', padding: '4px 8px' }}
-                            >
-                              삭제 ({selectedElements.length})
-                            </Button>
+                                  // 선택된 요소 삭제
+                                  selectedElements.forEach(el => el.remove());
+                                  setSelectedElements([]);
+
+                                  // 변경된 HTML 저장
+                                  const updatedHtml = iframeDoc.documentElement.outerHTML;
+                                  currentEditorHtmlRef.current = updatedHtml;
+                                  setSavedTranslationHtml(updatedHtml);
+                                  console.log('🗑️ 선택된 요소 삭제:', selectedElements.length, '개');
+                                  
+                                  // ⭐ 삭제 후 iframe에 포커스를 주어 키보드 단축키가 바로 작동하도록 함
+                                  setTimeout(() => {
+                                    // body에 tabIndex 설정하여 포커스 가능하게 만들기
+                                    if (iframeDoc.body) {
+                                      iframeDoc.body.setAttribute('tabindex', '-1');
+                                      iframeDoc.body.focus();
+                                    }
+                                    if (myTranslationIframeRef.current?.contentWindow) {
+                                      myTranslationIframeRef.current.contentWindow.focus();
+                                    }
+                                    myTranslationIframeRef.current?.focus();
+                                    console.log('🎯 TranslationWork iframe에 포커스 설정');
+                                  }, 100);
+                                }}
+                                style={{ fontSize: '11px', padding: '4px 8px' }}
+                              >
+                                삭제
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>

@@ -96,7 +96,7 @@ const Step2AreaSelection: React.FC<{
     if (!iframeDoc) return;
     
     // ⭐ iframe의 선택 상태를 selectedAreas와 동기화
-    // 1. 모든 선택 상태 제거
+    // 1. 모든 선택 상태 제거 (초기화 시 자동 선택 문제 해결)
     iframeDoc.querySelectorAll('.transflow-selected').forEach(el => {
       el.classList.remove('transflow-selected');
     });
@@ -119,6 +119,23 @@ const Step2AreaSelection: React.FC<{
         console.log('💾 STEP 2 iframe HTML 저장 완료 (data-transflow-id 포함)');
       }
   }, [selectedAreas, onHtmlUpdate, pageLoaded]);
+  
+  // ⭐ Step 2 진입 시 초기화: 모든 선택 상태 제거 (자동 선택 문제 해결)
+  React.useEffect(() => {
+    if (!iframeRef.current || !pageLoaded) return;
+    
+    const iframe = iframeRef.current;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) return;
+    
+    // selectedAreas가 비어있을 때 모든 선택 상태 제거
+    if (selectedAreas.length === 0) {
+      iframeDoc.querySelectorAll('.transflow-selected').forEach(el => {
+        el.classList.remove('transflow-selected');
+      });
+      console.log('🔄 Step 2 초기화: 모든 선택 상태 제거');
+    }
+  }, [pageLoaded]); // pageLoaded가 true가 될 때만 실행
 
   // ⭐ hoveredAreaId가 변경될 때 iframe에서 해당 영역 하이라이트
   React.useEffect(() => {
@@ -477,17 +494,30 @@ const Step2AreaSelection: React.FC<{
           overflow: 'auto',
         }}
       >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h3
           style={{
             fontSize: '14px',
             fontWeight: 600,
             color: '#000000',
             fontFamily: 'system-ui, Pretendard, sans-serif',
-            marginBottom: '16px',
+              margin: 0,
           }}
         >
           선택된 영역 ({selectedAreas.length})
         </h3>
+          {selectedAreas.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                selectedAreas.forEach(area => onAreaRemove(area.id));
+              }}
+              style={{ fontSize: '12px', padding: '4px 8px' }}
+            >
+              전체 선택 취소
+            </Button>
+          )}
+        </div>
         {selectedAreas.length === 0 ? (
           <div
             style={{
@@ -2582,6 +2612,28 @@ const Step3PreEdit: React.FC<{
               {selectedElements.length}개 선택됨
             </span>
                 <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (!iframeRef.current) return;
+                    const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+                    if (iframeDoc) {
+                      selectedElements.forEach(el => {
+                        el.classList.remove('component-selected');
+                        el.style.outline = '';
+                        el.style.boxShadow = '';
+                        el.style.backgroundColor = '';
+                        el.style.outlineOffset = '';
+                      });
+                    }
+                    setSelectedElements([]);
+                  }}
+                  disabled={selectedElements.length === 0}
+                  style={{ fontSize: '12px', padding: '4px 8px' }}
+                  title="전체 선택 취소"
+                >
+                  선택 취소
+                </Button>
+                <Button
                   variant="primary"
                   onClick={handleDelete}
                   disabled={selectedElements.length === 0}
@@ -2597,6 +2649,28 @@ const Step3PreEdit: React.FC<{
             <span style={{ fontSize: '12px', color: '#696969', marginRight: '4px' }}>
               {selectedElements.length}개 선택됨
             </span>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (!iframeRef.current) return;
+                const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+                if (iframeDoc) {
+                  selectedElements.forEach(el => {
+                    el.classList.remove('component-selected');
+                    el.style.outline = '';
+                    el.style.boxShadow = '';
+                    el.style.backgroundColor = '';
+                    el.style.outlineOffset = '';
+                  });
+                }
+                setSelectedElements([]);
+              }}
+              disabled={selectedElements.length === 0}
+              style={{ fontSize: '12px', padding: '4px 8px' }}
+              title="전체 선택 취소"
+            >
+              선택 취소
+            </Button>
             <Button
               variant="primary"
               onClick={handleDelete}
@@ -5045,6 +5119,28 @@ const Step5ParallelEdit: React.FC<{
                             <span style={{ fontSize: '11px', color: '#696969' }}>
                               {selectedElements.length}개 선택됨
                             </span>
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                if (!translatedIframeRef.current) return;
+                                const iframeDoc = translatedIframeRef.current.contentDocument || translatedIframeRef.current.contentWindow?.document;
+                                if (iframeDoc) {
+                                  selectedElements.forEach(el => {
+                                    el.classList.remove('component-selected');
+                                    el.style.outline = '';
+                                    el.style.boxShadow = '';
+                                    el.style.backgroundColor = '';
+                                    el.style.outlineOffset = '';
+                                  });
+                                }
+                                setSelectedElements([]);
+                              }}
+                              disabled={selectedElements.length === 0}
+                              style={{ fontSize: '11px', padding: '4px 8px' }}
+                              title="전체 선택 취소"
+                            >
+                              선택 취소
+                            </Button>
                             <Button
                               variant="primary"
                               onClick={handleDelete}
