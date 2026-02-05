@@ -76,9 +76,9 @@ export const sidebarMenu: MenuItem[] = [
   },
   {
     key: 'settings',
-    label: '설정',
+    label: '시스템 설정',
     path: '/settings',
-    roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VOLUNTEER],
+    roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
     icon: 'Settings',
   },
 ];

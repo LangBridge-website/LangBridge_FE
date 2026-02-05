@@ -18,10 +18,10 @@ import TranslationsWorking from './pages/TranslationsWorking';
 import Reviews from './pages/Reviews';
 import DocumentReview from './pages/DocumentReview';
 import TranslationsFavorites from './pages/TranslationsFavorites';
+import SystemSettings from './pages/SystemSettings';
 const Glossary = () => <div className="p-8"><h1 className="text-2xl font-bold">용어집 보기</h1></div>;
 const GlossaryManage = () => <div className="p-8"><h1 className="text-2xl font-bold">용어집 관리</h1></div>;
 const Activity = () => <div className="p-8"><h1 className="text-2xl font-bold">내 활동</h1></div>;
-const Settings = () => <div className="p-8"><h1 className="text-2xl font-bold">설정</h1></div>;
 
 function App() {
   return (
@@ -123,7 +123,7 @@ function App() {
                         } />
                         <Route path="/settings" element={
                           <ErrorBoundary>
-                            <Settings />
+                            <SystemSettings />
                           </ErrorBoundary>
                         } />
                       </Routes>
