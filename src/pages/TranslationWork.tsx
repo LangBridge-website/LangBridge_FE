@@ -14,7 +14,7 @@ import {
   Paragraph,
 } from '../utils/paragraphUtils';
 import ErrorBoundary from '../components/ErrorBoundary';
-import { AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Palette } from 'lucide-react';
+import { AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Palette, Quote, Minus, Link2, Highlighter, Image, Table, Code, Superscript, Subscript, MoreVertical, Undo2, Redo2 } from 'lucide-react';
 import './TranslationWork.css';
 
 export default function TranslationWork() {
@@ -34,6 +34,14 @@ export default function TranslationWork() {
   const [showHandoverModal, setShowHandoverModal] = useState(false);
   const [handoverMemo, setHandoverMemo] = useState('');
   const [handoverTerms, setHandoverTerms] = useState('');
+  
+  // 링크 편집 모달 상태
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [editingLink, setEditingLink] = useState<HTMLAnchorElement | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  
+  // 더보기 메뉴 상태
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   // 패널 접기/전체화면 상태
   const [collapsedPanels, setCollapsedPanels] = useState<Set<string>>(new Set());
@@ -601,22 +609,35 @@ export default function TranslationWork() {
       });
       linkClickHandlersRef.current.clear();
 
-      // 모든 링크에 클릭 방지 핸들러 추가
+      // 모든 링크에 클릭 핸들러 추가 (편집 모달 띄우기)
       const allLinks = iframeDoc.querySelectorAll('a');
-      const preventLinkNavigation = (e: Event) => {
+      const handleLinkClick = (e: Event) => {
+        const mouseEvent = e as MouseEvent;
+        
+        // Ctrl/Cmd 키를 누른 상태면 기본 동작 허용 (새 탭에서 열기)
+        if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
+          return true;
+        }
+        
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        
+        const linkElement = e.currentTarget as HTMLAnchorElement;
+        setEditingLink(linkElement);
+        setLinkUrl(linkElement.href || '');
+        setShowLinkModal(true);
+        
         return false;
       };
 
       allLinks.forEach(link => {
         const htmlLink = link as HTMLElement;
-        htmlLink.addEventListener('click', preventLinkNavigation, true);
-        linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
+        htmlLink.addEventListener('click', handleLinkClick, true);
+        linkClickHandlersRef.current.set(htmlLink, handleLinkClick);
         // 링크 스타일 변경 (편집 모드임을 표시)
-        htmlLink.style.cursor = 'text';
-        htmlLink.style.textDecoration = 'none';
+        htmlLink.style.cursor = 'pointer';
+        htmlLink.style.textDecoration = 'underline';
       });
 
       // 링크 스타일 CSS 추가
@@ -1091,6 +1112,23 @@ export default function TranslationWork() {
 
     return () => clearTimeout(timeoutId);
   }, [savedTranslationHtml, documentId, completedParagraphs]);
+
+  // 더보기 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showMoreMenu) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-more-menu]')) {
+        setShowMoreMenu(false);
+      }
+    };
+
+    window.document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMoreMenu]);
 
   // 패널 접기/펼치기
   const togglePanel = (panelId: string) => {
@@ -1799,7 +1837,7 @@ export default function TranslationWork() {
                     // 내 번역 패널 (iframe 기반 에디터 - HTML 구조 보존)
                     <>
                       {/* 편집 툴바 */}
-                      <div style={{ padding: '8px 12px', borderBottom: '1px solid #C0C0C0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8F9FA', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ padding: '8px 12px', borderBottom: '1px solid #C0C0C0', display: 'flex', justifyContent: 'flex-start', alignItems: 'center', backgroundColor: '#F8F9FA', flexWrap: 'wrap', gap: '8px' }}>
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {/* 모드 선택 */}
                           <Button
@@ -1992,12 +2030,131 @@ export default function TranslationWork() {
                                 <option value="48">48pt</option>
                                 <option value="72">72pt</option>
                               </select>
+                              <select
+                                onChange={(e) => {
+                                  const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                  if (iframeDoc && e.target.value) {
+                                    const lineHeight = e.target.value;
+                                    const selection = iframeDoc.getSelection();
+                                    
+                                    if (selection && selection.rangeCount > 0) {
+                                      const range = selection.getRangeAt(0);
+                                      
+                                      // 블록 요소 찾기 (p, div, h1-h6, li 등)
+                                      let blockElement: HTMLElement | null = null;
+                                      
+                                      if (range.commonAncestorContainer.nodeType === 1) {
+                                        // Element 노드인 경우
+                                        blockElement = (range.commonAncestorContainer as HTMLElement).closest('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre');
+                                      } else {
+                                        // Text 노드인 경우 부모 요소에서 찾기
+                                        blockElement = range.commonAncestorContainer.parentElement?.closest('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre') || null;
+                                      }
+                                      
+                                      if (blockElement) {
+                                        // 블록 요소에 직접 line-height 스타일 적용
+                                        // execCommand를 사용하여 undo 스택에 기록하기 위해
+                                        // 블록 요소 전체를 선택하고 insertHTML로 교체
+                                        try {
+                                          // 선택 영역을 블록 요소 전체로 확장
+                                          const blockRange = iframeDoc.createRange();
+                                          blockRange.selectNodeContents(blockElement);
+                                          selection.removeAllRanges();
+                                          selection.addRange(blockRange);
+                                          
+                                          // 블록 요소의 HTML을 복사하여 line-height 적용
+                                          const originalHtml = blockElement.innerHTML;
+                                          const tagName = blockElement.tagName.toLowerCase();
+                                          const newHtml = `<${tagName} style="line-height: ${lineHeight};">${originalHtml}</${tagName}>`;
+                                          
+                                          // insertHTML로 교체 (undo 스택에 기록됨)
+                                          iframeDoc.execCommand('insertHTML', false, newHtml);
+                                        } catch (err) {
+                                          // insertHTML이 실패하면 직접 스타일 적용
+                                          blockElement.style.lineHeight = lineHeight;
+                                        }
+                                      } else {
+                                        // 블록 요소를 찾지 못한 경우, 현재 위치에 div 삽입
+                                        const div = iframeDoc.createElement('div');
+                                        div.style.lineHeight = lineHeight;
+                                        div.innerHTML = '&nbsp;';
+                                        
+                                        try {
+                                          iframeDoc.execCommand('insertHTML', false, div.outerHTML);
+                                        } catch (err) {
+                                          range.insertNode(div);
+                                        }
+                                      }
+                                    }
+                                    
+                                    e.target.value = ''; // 리셋
+                                  }
+                                }}
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '4px 8px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  marginLeft: '4px',
+                                }}
+                                title="줄간격"
+                              >
+                                <option value="">줄간격</option>
+                                <option value="1.0">1.0 (단일)</option>
+                                <option value="1.15">1.15</option>
+                                <option value="1.5">1.5 (기본)</option>
+                                <option value="1.75">1.75</option>
+                                <option value="2.0">2.0 (2배)</option>
+                                <option value="2.5">2.5</option>
+                                <option value="3.0">3.0</option>
+                              </select>
                               <div style={{ position: 'relative', display: 'inline-block', width: '30px', height: '26px' }}>
+                              <input
+                                type="color"
+                                onChange={(e) => {
+                                  const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                  if (iframeDoc) iframeDoc.execCommand('foreColor', false, e.target.value);
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    opacity: 0,
+                                    cursor: 'pointer',
+                                    zIndex: 2,
+                                  }}
+                                  title="글자 색상"
+                                />
+                                <button
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                    backgroundColor: '#FFFFFF',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  cursor: 'pointer',
+                                    padding: 0,
+                                    pointerEvents: 'none',
+                                }}
+                                title="글자 색상"
+                                  disabled
+                                >
+                                  <Palette size={16} color="#000000" />
+                                </button>
+                              </div>
+                              <div style={{ position: 'relative', display: 'inline-block', width: '30px', height: '26px', marginLeft: '4px' }}>
                                 <input
                                   type="color"
                                   onChange={(e) => {
                                     const iframeDoc = myTranslationIframeRef.current?.contentDocument;
-                                    if (iframeDoc) iframeDoc.execCommand('foreColor', false, e.target.value);
+                                    if (iframeDoc) iframeDoc.execCommand('backColor', false, e.target.value);
                                   }}
                                   style={{
                                     position: 'absolute',
@@ -2007,7 +2164,7 @@ export default function TranslationWork() {
                                     cursor: 'pointer',
                                     zIndex: 2,
                                   }}
-                                  title="글자 색상"
+                                  title="배경 색상"
                                 />
                                 <button
                                   style={{
@@ -2024,10 +2181,10 @@ export default function TranslationWork() {
                                     padding: 0,
                                     pointerEvents: 'none',
                                   }}
-                                  title="글자 색상"
+                                  title="배경 색상"
                                   disabled
                                 >
-                                  <Palette size={16} color="#000000" />
+                                  <Highlighter size={16} color="#000000" />
                                 </button>
                               </div>
                               <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
@@ -2153,58 +2310,364 @@ export default function TranslationWork() {
                                   backgroundColor: '#FFFFFF',
                                   color: '#000000',
                                   cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                                 title="링크 삽입"
                               >
-                                🔗
+                                <Link2 size={16} />
                               </button>
-                            </>
-                          )}
-                          
-                          {/* 컴포넌트 편집 모드 */}
-                          {editorMode === 'component' && selectedElements.length > 0 && (
-                            <Button
-                              variant="secondary"
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = (event) => {
+                                        const imageUrl = event.target?.result as string;
+                                        const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                        if (iframeDoc && imageUrl) {
+                                          try {
+                                            iframeDoc.execCommand('insertHTML', false, `<img src="${imageUrl}" alt="" style="max-width: 100%; height: auto;" />`);
+                                          } catch (err) {
+                                            const selection = iframeDoc.getSelection();
+                                            if (selection && selection.rangeCount > 0) {
+                                              const range = selection.getRangeAt(0);
+                                              const img = iframeDoc.createElement('img');
+                                              img.src = imageUrl;
+                                              img.alt = '';
+                                              img.style.maxWidth = '100%';
+                                              img.style.height = 'auto';
+                                              range.insertNode(img);
+                                            }
+                                          }
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                    // 같은 파일을 다시 선택할 수 있도록 리셋
+                                    e.target.value = '';
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    opacity: 0,
+                                    cursor: 'pointer',
+                                    zIndex: 2,
+                                  }}
+                                  title="이미지 삽입"
+                                />
+                                <button
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: '#FFFFFF',
+                                    color: '#000000',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    pointerEvents: 'none',
+                                  }}
+                                  title="이미지 삽입"
+                                  disabled
+                                >
+                                  <Image size={16} />
+                                </button>
+                              </div>
+                              <button
                               onClick={() => {
-                                if (!myTranslationIframeRef.current) return;
-                                const iframeDoc = myTranslationIframeRef.current.contentDocument;
-                                if (!iframeDoc) return;
-
-                                // Undo Stack에 현재 상태 저장
-                                undoStackRef.current.push(currentEditorHtmlRef.current);
-                                redoStackRef.current = [];
-
-                                // 선택된 요소 삭제
-                                selectedElements.forEach(el => el.remove());
-                                setSelectedElements([]);
-
-                                // 변경된 HTML 저장
-                                const updatedHtml = iframeDoc.documentElement.outerHTML;
-                                currentEditorHtmlRef.current = updatedHtml;
-                                setSavedTranslationHtml(updatedHtml);
-                                console.log('🗑️ 선택된 요소 삭제:', selectedElements.length, '개');
-                                
-                                // ⭐ 삭제 후 iframe에 포커스를 주어 키보드 단축키가 바로 작동하도록 함
-                                setTimeout(() => {
-                                  // body에 tabIndex 설정하여 포커스 가능하게 만들기
-                                  if (iframeDoc.body) {
-                                    iframeDoc.body.setAttribute('tabindex', '-1');
-                                    iframeDoc.body.focus();
+                                  const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                  if (iframeDoc) {
+                                    // 코드 블록 삽입
+                                    try {
+                                      iframeDoc.execCommand('insertHTML', false, '<pre style="background-color: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto;"><code></code></pre>');
+                                    } catch (err) {
+                                      // insertHTML이 지원되지 않으면 formatBlock 사용
+                                      iframeDoc.execCommand('formatBlock', false, 'pre');
+                                      const selection = iframeDoc.getSelection();
+                                      if (selection && selection.rangeCount > 0) {
+                                        const range = selection.getRangeAt(0);
+                                        const preElement = range.commonAncestorContainer.nodeType === 1 
+                                          ? range.commonAncestorContainer as HTMLElement
+                                          : (range.commonAncestorContainer.parentElement as HTMLElement);
+                                        if (preElement && preElement.tagName === 'PRE') {
+                                          preElement.style.backgroundColor = '#f4f4f4';
+                                          preElement.style.padding = '10px';
+                                          preElement.style.borderRadius = '4px';
+                                          preElement.style.overflowX = 'auto';
+                                        }
+                                      }
+                                    }
                                   }
-                                  if (myTranslationIframeRef.current?.contentWindow) {
-                                    myTranslationIframeRef.current.contentWindow.focus();
-                                  }
-                                  myTranslationIframeRef.current?.focus();
-                                  console.log('🎯 TranslationWork iframe에 포커스 설정');
-                                }, 100);
-                              }}
-                              style={{ fontSize: '11px', padding: '4px 8px' }}
-                            >
-                              삭제 ({selectedElements.length})
-                            </Button>
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="코드 블록"
+                              >
+                                <Code size={16} />
+                              </button>
+                              <div style={{ position: 'relative', display: 'inline-block' }} data-more-menu>
+                                <button
+                                  onClick={() => setShowMoreMenu(!showMoreMenu)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: showMoreMenu ? '#E0E0E0' : '#FFFFFF',
+                                    color: '#000000',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                  title="더보기"
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+                                {showMoreMenu && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: '100%',
+                                      right: 0,
+                                      marginTop: '4px',
+                                      backgroundColor: '#FFFFFF',
+                                      border: '1px solid #A9A9A9',
+                                      borderRadius: '4px',
+                                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                      zIndex: 1000,
+                                      display: 'flex',
+                                      flexDirection: 'row',
+                                      gap: '4px',
+                                      padding: '4px',
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    data-more-menu
+                                  >
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                        if (iframeDoc) {
+                                          iframeDoc.execCommand('formatBlock', false, 'blockquote');
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="인용문"
+                                    >
+                                      <Quote size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                        if (iframeDoc) {
+                                          iframeDoc.execCommand('insertHorizontalRule', false);
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="구분선"
+                                    >
+                                      <Minus size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                        if (iframeDoc) {
+                                          const rows = prompt('행 수를 입력하세요 (기본값: 3):', '3');
+                                          const cols = prompt('열 수를 입력하세요 (기본값: 3):', '3');
+                                          const rowCount = parseInt(rows || '3', 10);
+                                          const colCount = parseInt(cols || '3', 10);
+                                          
+                                          if (rowCount > 0 && colCount > 0) {
+                                            let tableHtml = '<table border="1" style="border-collapse: collapse; width: 100%;">';
+                                            for (let i = 0; i < rowCount; i++) {
+                                              tableHtml += '<tr>';
+                                              for (let j = 0; j < colCount; j++) {
+                                                tableHtml += '<td style="padding: 8px; border: 1px solid #000;">&nbsp;</td>';
+                                              }
+                                              tableHtml += '</tr>';
+                                            }
+                                            tableHtml += '</table>';
+                                            
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, tableHtml);
+                                            } catch (err) {
+                                              const selection = iframeDoc.getSelection();
+                                              if (selection && selection.rangeCount > 0) {
+                                                const range = selection.getRangeAt(0);
+                                                const tempDiv = iframeDoc.createElement('div');
+                                                tempDiv.innerHTML = tableHtml;
+                                                const fragment = iframeDoc.createDocumentFragment();
+                                                while (tempDiv.firstChild) {
+                                                  fragment.appendChild(tempDiv.firstChild);
+                                                }
+                                                range.insertNode(fragment);
+                                              }
+                                            }
+                                          }
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="표"
+                                    >
+                                      <Table size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                        if (iframeDoc) {
+                                          const selection = iframeDoc.getSelection();
+                                          if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
+                                            const range = selection.getRangeAt(0);
+                                            const selectedText = range.toString();
+                                            
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, `<sup>${selectedText}</sup>`);
+                                            } catch (err) {
+                                              const sup = iframeDoc.createElement('sup');
+                                              sup.textContent = selectedText;
+                                              range.deleteContents();
+                                              range.insertNode(sup);
+                                            }
+                                          } else {
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, '<sup></sup>');
+                                            } catch (err) {
+                                              const selection = iframeDoc.getSelection();
+                                              if (selection && selection.rangeCount > 0) {
+                                                const range = selection.getRangeAt(0);
+                                                const sup = iframeDoc.createElement('sup');
+                                                sup.innerHTML = '&nbsp;';
+                                                range.insertNode(sup);
+                                              }
+                                            }
+                                          }
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="위 첨자"
+                                    >
+                                      <Superscript size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                                        if (iframeDoc) {
+                                          const selection = iframeDoc.getSelection();
+                                          if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
+                                            const range = selection.getRangeAt(0);
+                                            const selectedText = range.toString();
+                                            
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, `<sub>${selectedText}</sub>`);
+                                            } catch (err) {
+                                              const sub = iframeDoc.createElement('sub');
+                                              sub.textContent = selectedText;
+                                              range.deleteContents();
+                                              range.insertNode(sub);
+                                            }
+                                          } else {
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, '<sub></sub>');
+                                            } catch (err) {
+                                              const selection = iframeDoc.getSelection();
+                                              if (selection && selection.rangeCount > 0) {
+                                                const range = selection.getRangeAt(0);
+                                                const sub = iframeDoc.createElement('sub');
+                                                sub.innerHTML = '&nbsp;';
+                                                range.insertNode(sub);
+                                              }
+                                            }
+                                          }
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="아래 첨자"
+                                    >
+                                      <Subscript size={16} />
+                                    </button>
+                                  </div>
                           )}
                         </div>
-                        <div style={{ display: 'flex', gap: '4px' }}>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
                           <button
                             onClick={() => {
                               if (!myTranslationIframeRef.current) return;
@@ -2251,10 +2714,13 @@ export default function TranslationWork() {
                               backgroundColor: '#FFFFFF',
                               color: '#000000',
                               cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                             }}
-                            title="Undo (Ctrl/Cmd+Z)"
+                                title="실행 취소 (Ctrl/Cmd+Z)"
                           >
-                            ↩️
+                                <Undo2 size={16} color="#000000" />
                           </button>
                           <button
                             onClick={() => {
@@ -2302,11 +2768,59 @@ export default function TranslationWork() {
                               backgroundColor: '#FFFFFF',
                               color: '#000000',
                               cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                             }}
-                            title="Redo (Ctrl/Cmd+Y)"
+                                title="다시 실행 (Ctrl/Cmd+Y)"
                           >
-                            ↪️
+                                <Redo2 size={16} color="#000000" />
                           </button>
+                            </>
+                          )}
+                          
+                          {/* 컴포넌트 편집 모드 */}
+                          {editorMode === 'component' && selectedElements.length > 0 && (
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                if (!myTranslationIframeRef.current) return;
+                                const iframeDoc = myTranslationIframeRef.current.contentDocument;
+                                if (!iframeDoc) return;
+
+                                // Undo Stack에 현재 상태 저장
+                                undoStackRef.current.push(currentEditorHtmlRef.current);
+                                redoStackRef.current = [];
+
+                                // 선택된 요소 삭제
+                                selectedElements.forEach(el => el.remove());
+                                setSelectedElements([]);
+
+                                // 변경된 HTML 저장
+                                const updatedHtml = iframeDoc.documentElement.outerHTML;
+                                currentEditorHtmlRef.current = updatedHtml;
+                                setSavedTranslationHtml(updatedHtml);
+                                console.log('🗑️ 선택된 요소 삭제:', selectedElements.length, '개');
+                                
+                                // ⭐ 삭제 후 iframe에 포커스를 주어 키보드 단축키가 바로 작동하도록 함
+                                setTimeout(() => {
+                                  // body에 tabIndex 설정하여 포커스 가능하게 만들기
+                                  if (iframeDoc.body) {
+                                    iframeDoc.body.setAttribute('tabindex', '-1');
+                                    iframeDoc.body.focus();
+                                  }
+                                  if (myTranslationIframeRef.current?.contentWindow) {
+                                    myTranslationIframeRef.current.contentWindow.focus();
+                                  }
+                                  myTranslationIframeRef.current?.focus();
+                                  console.log('🎯 TranslationWork iframe에 포커스 설정');
+                                }, 100);
+                              }}
+                              style={{ fontSize: '11px', padding: '4px 8px' }}
+                            >
+                              삭제 ({selectedElements.length})
+                            </Button>
+                          )}
                         </div>
                       </div>
                       {/* iframe 에디터 */}
@@ -2495,6 +3009,152 @@ export default function TranslationWork() {
                 style={{ fontSize: '12px' }}
               >
                 인계 요청
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 링크 편집 모달 */}
+      {showLinkModal && editingLink && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setShowLinkModal(false);
+            setEditingLink(null);
+            setLinkUrl('');
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: colors.surface,
+              padding: '24px',
+              borderRadius: '8px',
+              width: '400px',
+              maxWidth: '90vw',
+              border: `1px solid ${colors.border}`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>
+              링크 편집
+            </h3>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px', color: colors.primaryText }}>
+                URL
+              </label>
+              <input
+                type="text"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://example.com"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '4px',
+                  fontSize: '13px',
+                  fontFamily: 'inherit',
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                    if (iframeDoc && editingLink && linkUrl.trim()) {
+                      // execCommand를 사용하여 링크 URL 업데이트 (undo 스택에 기록)
+                      const selection = iframeDoc.getSelection();
+                      if (selection) {
+                        const range = iframeDoc.createRange();
+                        range.selectNodeContents(editingLink);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        
+                        // 기존 링크 삭제 후 새 링크 생성
+                        iframeDoc.execCommand('unlink', false);
+                        iframeDoc.execCommand('createLink', false, linkUrl.trim());
+                      }
+                    }
+                    setShowLinkModal(false);
+                    setEditingLink(null);
+                    setLinkUrl('');
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowLinkModal(false);
+                  setEditingLink(null);
+                  setLinkUrl('');
+                }}
+                style={{ fontSize: '12px' }}
+              >
+                취소
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                  if (iframeDoc && editingLink) {
+                    // execCommand를 사용하여 링크 삭제 (undo 스택에 기록)
+                    const selection = iframeDoc.getSelection();
+                    if (selection) {
+                      const range = iframeDoc.createRange();
+                      range.selectNodeContents(editingLink);
+                      selection.removeAllRanges();
+                      selection.addRange(range);
+                      iframeDoc.execCommand('unlink', false);
+                    }
+                  }
+                  setShowLinkModal(false);
+                  setEditingLink(null);
+                  setLinkUrl('');
+                }}
+                style={{ fontSize: '12px', color: '#dc3545', borderColor: '#dc3545' }}
+              >
+                삭제
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const iframeDoc = myTranslationIframeRef.current?.contentDocument;
+                  if (iframeDoc && editingLink && linkUrl.trim()) {
+                    // execCommand를 사용하여 링크 URL 업데이트 (undo 스택에 기록)
+                    const selection = iframeDoc.getSelection();
+                    if (selection) {
+                      const range = iframeDoc.createRange();
+                      range.selectNodeContents(editingLink);
+                      selection.removeAllRanges();
+                      selection.addRange(range);
+                      
+                      // 기존 링크 삭제 후 새 링크 생성
+                      iframeDoc.execCommand('unlink', false);
+                      iframeDoc.execCommand('createLink', false, linkUrl.trim());
+                    }
+                  }
+                  setShowLinkModal(false);
+                  setEditingLink(null);
+                  setLinkUrl('');
+                }}
+                style={{ fontSize: '12px' }}
+              >
+                저장
               </Button>
             </div>
           </div>

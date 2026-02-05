@@ -9,6 +9,7 @@ import { Button } from '../components/Button';
 import { WysiwygEditor, EditorMode } from '../components/WysiwygEditor';
 import { documentApi } from '../services/documentApi';
 import { translationApi } from '../services/api';
+import { AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Palette, Quote, Minus, Link2, Highlighter, Image, Table, Code, Superscript, Subscript, MoreVertical, Undo2, Redo2 } from 'lucide-react';
 
 // STEP 1: 크롤링 주소 입력
 const Step1CrawlingInput: React.FC<{
@@ -3290,6 +3291,14 @@ const Step5ParallelEdit: React.FC<{
   const [fullscreenPanel, setFullscreenPanel] = useState<string | null>(null);
   const [selectedElements, setSelectedElements] = useState<HTMLElement[]>([]);
   
+  // 링크 편집 모달 상태
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [editingLink, setEditingLink] = useState<HTMLAnchorElement | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  
+  // 더보기 메뉴 상태
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  
   const crawledIframeRef = React.useRef<HTMLIFrameElement>(null);
   const selectedIframeRef = React.useRef<HTMLIFrameElement>(null);
   const translatedIframeRef = React.useRef<HTMLIFrameElement>(null);
@@ -4134,12 +4143,13 @@ const Step5ParallelEdit: React.FC<{
                           borderBottom: '1px solid #C0C0C0',
                           backgroundColor: '#F8F9FA',
                           display: 'flex',
-                          justifyContent: 'space-between',
+                          justifyContent: 'flex-start',
                           alignItems: 'center',
+                          flexWrap: 'wrap',
                           gap: '8px',
                         }}
                       >
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
                           <Button
                             variant={mode === 'text' ? 'primary' : 'secondary'}
                             onClick={() => setMode('text')}
@@ -4154,409 +4164,881 @@ const Step5ParallelEdit: React.FC<{
                           >
                             컴포넌트 편집
                           </Button>
-                          <div style={{ borderLeft: '1px solid #C0C0C0', height: '20px', margin: '0 4px' }} />
-                          <Button
-                            variant="secondary"
+                          
+                          {/* Rich Text 기능 (텍스트 모드일 때만) */}
+                          {mode === 'text' && (
+                            <>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <button
                             onClick={() => {
-                              const iframe = translatedIframeRef.current;
-                              const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                              if (!iframeDoc) return;
-
-                              // ⭐ 모드에 따라 다른 undo 동작
-                              if (mode === 'component') {
-                                // 컴포넌트 편집 모드: 컴포넌트 편집 undo stack 사용
-                                if (undoStackRef.current.length > 0) {
-                                  // 현재 상태를 redo stack에 저장
-                                  const currentHtml = iframeDoc.documentElement.outerHTML;
-                                  redoStackRef.current.push(currentHtml);
-                                  
-                                  // undo stack에서 이전 상태 가져오기
-                                  const previousHtml = undoStackRef.current.pop() || '';
-                                  
-                                  // iframe에 이전 HTML 적용
-                                  iframeDoc.open();
-                                  iframeDoc.write(previousHtml);
-                                  iframeDoc.close();
-                                  
-                                  // currentHtmlRef 업데이트
-                                  currentHtmlRef.current = previousHtml;
-                                  onTranslatedChange(previousHtml);
-                                  
-                                  // 컴포넌트 편집 모드 다시 초기화
-                                  setTimeout(() => {
-                                    const newIframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                                    if (!newIframeDoc) return;
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('bold', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                }}
+                                title="굵게 (Ctrl+B)"
+                              >
+                                B
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('italic', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  fontStyle: 'italic',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                }}
+                                title="기울임 (Ctrl+I)"
+                              >
+                                I
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('underline', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  textDecoration: 'underline',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                }}
+                                title="밑줄 (Ctrl+U)"
+                              >
+                                U
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('strikeThrough', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  textDecoration: 'line-through',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                }}
+                                title="취소선"
+                              >
+                                S
+                              </button>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <select
+                                onChange={(e) => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc && e.target.value) {
+                                    const fontSize = e.target.value;
+                                    const selection = iframeDoc.getSelection();
                                     
-                                    // contentEditable 비활성화
-                                    const editableElements = newIframeDoc.querySelectorAll('[contenteditable="true"]');
-                                    editableElements.forEach((el) => {
-                                      (el as HTMLElement).contentEditable = 'false';
-                                    });
-                                    
-                                    // CSS 스타일 추가 (useEffect와 동일)
-                                    const existingStyle = newIframeDoc.getElementById('editor-styles');
-                                    if (existingStyle) {
-                                      existingStyle.remove();
-                                    }
-                                    const style = newIframeDoc.createElement('style');
-                                    style.id = 'editor-styles';
-                                    style.textContent = `
-                                      div[data-component-editable],
-                                      section[data-component-editable],
-                                      article[data-component-editable],
-                                      header[data-component-editable],
-                                      footer[data-component-editable],
-                                      main[data-component-editable],
-                                      aside[data-component-editable],
-                                      nav[data-component-editable],
-                                      p[data-component-editable],
-                                      h1[data-component-editable],
-                                      h2[data-component-editable],
-                                      h3[data-component-editable],
-                                      h4[data-component-editable],
-                                      h5[data-component-editable],
-                                      h6[data-component-editable],
-                                      a[data-component-editable] {
-                                        outline: 1px dashed #C0C0C0 !important;
-                                        cursor: pointer !important;
-                                      }
-                                      div[data-component-editable]:hover,
-                                      section[data-component-editable]:hover,
-                                      article[data-component-editable]:hover,
-                                      p[data-component-editable]:hover,
-                                      h1[data-component-editable]:hover,
-                                      h2[data-component-editable]:hover,
-                                      h3[data-component-editable]:hover,
-                                      a[data-component-editable]:hover {
-                                        outline: 2px solid #808080 !important;
-                                      }
-                                      .component-selected {
-                                        outline: 4px solid #28a745 !important;
-                                        outline-offset: 3px !important;
-                                        background-color: rgba(40, 167, 69, 0.25) !important;
-                                        box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.4), 0 4px 12px rgba(40, 167, 69, 0.5) !important;
-                                        position: relative !important;
-                                        transition: all 0.2s ease !important;
-                                      }
-                                      .component-selected::after {
-                                        content: '✓ 선택됨';
-                                        position: fixed;
-                                        top: 10px;
-                                        right: 10px;
-                                        background: linear-gradient(135deg, #28a745, #20c997);
-                                        color: white;
-                                        padding: 6px 12px;
-                                        border-radius: 6px;
-                                        font-size: 14px;
-                                        font-weight: 600;
-                                        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.5);
-                                        z-index: 999999;
-                                        animation: fadeIn 0.2s ease;
-                                      }
-                                      @keyframes fadeIn {
-                                        from { opacity: 0; transform: translateY(-10px); }
-                                        to { opacity: 1; transform: translateY(0); }
-                                      }
-                                    `;
-                                    newIframeDoc.head.appendChild(style);
-                                    
-                                    // 컴포넌트 클릭 핸들러 추가
-                                    const componentElements = newIframeDoc.querySelectorAll('div, section, article, header, footer, main, aside, nav, p, h1, h2, h3, h4, h5, h6, a');
-                                    
-                                    const handleComponentClick = (e: Event) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
+                                    if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
+                                      const range = selection.getRangeAt(0);
+                                      const selectedText = range.toString();
                                       
-                                      const target = e.target as HTMLElement;
-                                      if (!target || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'HEAD', 'BODY'].includes(target.tagName)) return;
+                                      const spanHtml = `<span style="font-size: ${fontSize}pt;">${selectedText}</span>`;
                                       
-                                      const editableElement = target.closest('[data-component-editable]') as HTMLElement;
-                                      if (!editableElement) return;
-                                      
-                                      const isSelected = editableElement.classList.contains('component-selected');
-                                      
-                                      if (isSelected) {
-                                        editableElement.classList.remove('component-selected');
-                                        editableElement.style.outline = '';
-                                        editableElement.style.boxShadow = '';
-                                        editableElement.style.backgroundColor = '';
-                                        editableElement.style.outlineOffset = '';
-                                        setSelectedElements(prev => prev.filter(el => el !== editableElement));
-                                      } else {
-                                        editableElement.classList.add('component-selected');
-                                        editableElement.style.outline = '';
-                                        editableElement.style.boxShadow = '';
-                                        editableElement.style.backgroundColor = '';
-                                        editableElement.style.outlineOffset = '';
-                                        setSelectedElements(prev => [...prev, editableElement]);
-                                      }
-                                    };
-                                    
-                                    componentElements.forEach((el) => {
-                                      if (el.tagName && !['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) {
-                                        const htmlEl = el as HTMLElement;
-                                        htmlEl.setAttribute('data-component-editable', 'true');
-                                        htmlEl.style.cursor = 'pointer';
-                                        htmlEl.style.outline = '';
-                                        
-                                        // 기존 핸들러 제거 후 새로 추가
-                                        const existingHandler = componentClickHandlersRef.current.get(htmlEl);
-                                        if (existingHandler) {
-                                          htmlEl.removeEventListener('click', existingHandler, true);
+                                      try {
+                                        iframeDoc.execCommand('insertHTML', false, spanHtml);
+                                      } catch (err) {
+                                        range.deleteContents();
+                                        const tempDiv = iframeDoc.createElement('div');
+                                        tempDiv.innerHTML = spanHtml;
+                                        const fragment = iframeDoc.createDocumentFragment();
+                                        while (tempDiv.firstChild) {
+                                          fragment.appendChild(tempDiv.firstChild);
                                         }
-                                        htmlEl.addEventListener('click', handleComponentClick, true);
-                                        componentClickHandlersRef.current.set(htmlEl, handleComponentClick);
+                                        range.insertNode(fragment);
+                                        
+                                        range.setStartAfter(fragment.lastChild || range.startContainer);
+                                        range.collapse(false);
+                                        selection.removeAllRanges();
+                                        selection.addRange(range);
                                       }
-                                    });
-                                    
-                                    // 링크 클릭 방지 핸들러 추가
-                                    const allLinks = newIframeDoc.querySelectorAll('a');
-                                    const preventLinkNavigation = (e: Event) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      e.stopImmediatePropagation();
-                                      return false;
-                                    };
-                                    
-                                    allLinks.forEach(link => {
-                                      const htmlLink = link as HTMLElement;
-                                      const existingLinkHandler = linkClickHandlersRef.current.get(htmlLink);
-                                      if (existingLinkHandler) {
-                                        htmlLink.removeEventListener('click', existingLinkHandler, true);
-                                      }
-                                      htmlLink.addEventListener('click', preventLinkNavigation, true);
-                                      linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
-                                      htmlLink.style.cursor = 'pointer';
-                                    });
-                                    
-                                    // iframe 포커스 설정
-                                    if (newIframeDoc.body) {
-                                      newIframeDoc.body.setAttribute('tabindex', '-1');
-                                      newIframeDoc.body.focus();
+                                    } else {
+                                      iframeDoc.execCommand('fontSize', false, '3');
+                                  setTimeout(() => {
+                                        const fontSizeElements = iframeDoc.querySelectorAll('font[size="3"]');
+                                        if (fontSizeElements.length > 0) {
+                                          const lastElement = fontSizeElements[fontSizeElements.length - 1] as HTMLElement;
+                                          lastElement.style.fontSize = `${fontSize}pt`;
+                                          lastElement.removeAttribute('size');
+                                          
+                                          const span = iframeDoc.createElement('span');
+                                          span.style.fontSize = `${fontSize}pt`;
+                                          span.innerHTML = lastElement.innerHTML;
+                                          
+                                          if (lastElement.parentNode) {
+                                            lastElement.parentNode.replaceChild(span, lastElement);
+                                          }
+                                        }
+                                      }, 0);
                                     }
-                                  }, 100);
-                                  
-                                  setSelectedElements([]);
-                                  
-                                  console.log('↶ Step 5 컴포넌트 편집 실행 취소 완료. 남은 undo:', undoStackRef.current.length);
+                                    
+                                    e.target.value = '';
+                                  }
+                                }}
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '4px 8px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                }}
+                                title="글자 크기 (pt)"
+                              >
+                                <option value="">크기</option>
+                                <option value="8">8pt</option>
+                                <option value="9">9pt</option>
+                                <option value="10">10pt</option>
+                                <option value="11">11pt</option>
+                                <option value="12">12pt</option>
+                                <option value="14">14pt</option>
+                                <option value="16">16pt</option>
+                                <option value="18">18pt</option>
+                                <option value="20">20pt</option>
+                                <option value="24">24pt</option>
+                                <option value="28">28pt</option>
+                                <option value="32">32pt</option>
+                                <option value="36">36pt</option>
+                                <option value="48">48pt</option>
+                                <option value="72">72pt</option>
+                              </select>
+                              <select
+                                onChange={(e) => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc && e.target.value) {
+                                    const lineHeight = e.target.value;
+                                    const selection = iframeDoc.getSelection();
+                                    
+                                    if (selection && selection.rangeCount > 0) {
+                                      const range = selection.getRangeAt(0);
+                                      
+                                      let blockElement: HTMLElement | null = null;
+                                      
+                                      if (range.commonAncestorContainer.nodeType === 1) {
+                                        blockElement = (range.commonAncestorContainer as HTMLElement).closest('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre');
+                                      } else {
+                                        blockElement = range.commonAncestorContainer.parentElement?.closest('p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre') || null;
+                                      }
+                                      
+                                      if (blockElement) {
+                                        try {
+                                          const blockRange = iframeDoc.createRange();
+                                          blockRange.selectNodeContents(blockElement);
+                                          selection.removeAllRanges();
+                                          selection.addRange(blockRange);
+                                          
+                                          const originalHtml = blockElement.innerHTML;
+                                          const tagName = blockElement.tagName.toLowerCase();
+                                          const newHtml = `<${tagName} style="line-height: ${lineHeight};">${originalHtml}</${tagName}>`;
+                                          
+                                          iframeDoc.execCommand('insertHTML', false, newHtml);
+                                        } catch (err) {
+                                          blockElement.style.lineHeight = lineHeight;
+                                        }
+                                      } else {
+                                        const div = iframeDoc.createElement('div');
+                                        div.style.lineHeight = lineHeight;
+                                        div.innerHTML = '&nbsp;';
+                                        
+                                        try {
+                                          iframeDoc.execCommand('insertHTML', false, div.outerHTML);
+                                        } catch (err) {
+                                          range.insertNode(div);
+                                        }
+                                      }
+                                    }
+                                    
+                                    e.target.value = '';
+                                  }
+                                }}
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '4px 8px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  marginLeft: '4px',
+                                }}
+                                title="줄간격"
+                              >
+                                <option value="">줄간격</option>
+                                <option value="1.0">1.0 (단일)</option>
+                                <option value="1.15">1.15</option>
+                                <option value="1.5">1.5 (기본)</option>
+                                <option value="1.75">1.75</option>
+                                <option value="2.0">2.0 (2배)</option>
+                                <option value="2.5">2.5</option>
+                                <option value="3.0">3.0</option>
+                              </select>
+                              <div style={{ position: 'relative', display: 'inline-block', width: '30px', height: '26px' }}>
+                                <input
+                                  type="color"
+                                  onChange={(e) => {
+                                    const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                    if (iframeDoc) iframeDoc.execCommand('foreColor', false, e.target.value);
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    opacity: 0,
+                                    cursor: 'pointer',
+                                    zIndex: 2,
+                                  }}
+                                  title="글자 색상"
+                                />
+                                <button
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: '#FFFFFF',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    pointerEvents: 'none',
+                                  }}
+                                  title="글자 색상"
+                                  disabled
+                                >
+                                  <Palette size={16} color="#000000" />
+                                </button>
+                              </div>
+                              <div style={{ position: 'relative', display: 'inline-block', width: '30px', height: '26px', marginLeft: '4px' }}>
+                                <input
+                                  type="color"
+                                  onChange={(e) => {
+                                    const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                    if (iframeDoc) iframeDoc.execCommand('backColor', false, e.target.value);
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    opacity: 0,
+                                    cursor: 'pointer',
+                                    zIndex: 2,
+                                  }}
+                                  title="배경 색상"
+                                />
+                                <button
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: '#FFFFFF',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    pointerEvents: 'none',
+                                  }}
+                                  title="배경 색상"
+                                  disabled
+                                >
+                                  <Highlighter size={16} color="#000000" />
+                                </button>
+                              </div>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('justifyLeft', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="왼쪽 정렬"
+                              >
+                                <AlignLeft size={16} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('justifyCenter', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="가운데 정렬"
+                              >
+                                <AlignCenter size={16} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('justifyRight', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="오른쪽 정렬"
+                              >
+                                <AlignRight size={16} />
+                              </button>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('insertUnorderedList', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="글머리 기호 목록"
+                              >
+                                <List size={16} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) iframeDoc.execCommand('insertOrderedList', false);
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="번호 매기기 목록"
+                              >
+                                <ListOrdered size={16} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) {
+                                    const url = prompt('링크 URL을 입력하세요:');
+                                    if (url) iframeDoc.execCommand('createLink', false, url);
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="링크 삽입"
+                              >
+                                <Link2 size={16} />
+                              </button>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = (event) => {
+                                        const imageUrl = event.target?.result as string;
+                                        const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                        if (iframeDoc && imageUrl) {
+                                          try {
+                                            iframeDoc.execCommand('insertHTML', false, `<img src="${imageUrl}" alt="" style="max-width: 100%; height: auto;" />`);
+                                          } catch (err) {
+                                            const selection = iframeDoc.getSelection();
+                                            if (selection && selection.rangeCount > 0) {
+                                              const range = selection.getRangeAt(0);
+                                              const img = iframeDoc.createElement('img');
+                                              img.src = imageUrl;
+                                              img.alt = '';
+                                              img.style.maxWidth = '100%';
+                                              img.style.height = 'auto';
+                                              range.insertNode(img);
+                                            }
+                                          }
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                    e.target.value = '';
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    width: '100%',
+                                    height: '100%',
+                                    opacity: 0,
+                                    cursor: 'pointer',
+                                    zIndex: 2,
+                                  }}
+                                  title="이미지 삽입"
+                                />
+                                <button
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: '#FFFFFF',
+                                    color: '#000000',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    pointerEvents: 'none',
+                                  }}
+                                  title="이미지 삽입"
+                                  disabled
+                                >
+                                  <Image size={16} />
+                                </button>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                  if (iframeDoc) {
+                                    try {
+                                      iframeDoc.execCommand('insertHTML', false, '<pre style="background-color: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto;"><code></code></pre>');
+                                    } catch (err) {
+                                      iframeDoc.execCommand('formatBlock', false, 'pre');
+                                      const selection = iframeDoc.getSelection();
+                                      if (selection && selection.rangeCount > 0) {
+                                        const range = selection.getRangeAt(0);
+                                        const preElement = range.commonAncestorContainer.nodeType === 1 
+                                          ? range.commonAncestorContainer as HTMLElement
+                                          : (range.commonAncestorContainer.parentElement as HTMLElement);
+                                        if (preElement && preElement.tagName === 'PRE') {
+                                          preElement.style.backgroundColor = '#f4f4f4';
+                                          preElement.style.padding = '10px';
+                                          preElement.style.borderRadius = '4px';
+                                          preElement.style.overflowX = 'auto';
+                                        }
+                                      }
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="코드 블록"
+                              >
+                                <Code size={16} />
+                              </button>
+                              <div style={{ position: 'relative', display: 'inline-block' }} data-more-menu>
+                                <button
+                                  onClick={() => setShowMoreMenu(!showMoreMenu)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    border: '1px solid #A9A9A9',
+                                    borderRadius: '3px',
+                                    backgroundColor: showMoreMenu ? '#E0E0E0' : '#FFFFFF',
+                                    color: '#000000',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                  title="더보기"
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+                                {showMoreMenu && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: '100%',
+                                      right: 0,
+                                      marginTop: '4px',
+                                      backgroundColor: '#FFFFFF',
+                                      border: '1px solid #A9A9A9',
+                                      borderRadius: '4px',
+                                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                      zIndex: 1000,
+                                      display: 'flex',
+                                      flexDirection: 'row',
+                                      gap: '4px',
+                                      padding: '4px',
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    data-more-menu
+                                  >
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                        if (iframeDoc) {
+                                          iframeDoc.execCommand('formatBlock', false, 'blockquote');
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="인용문"
+                                    >
+                                      <Quote size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                        if (iframeDoc) {
+                                          iframeDoc.execCommand('insertHorizontalRule', false);
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="구분선"
+                                    >
+                                      <Minus size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                        if (iframeDoc) {
+                                          const rows = prompt('행 수를 입력하세요 (기본값: 3):', '3');
+                                          const cols = prompt('열 수를 입력하세요 (기본값: 3):', '3');
+                                          const rowCount = parseInt(rows || '3', 10);
+                                          const colCount = parseInt(cols || '3', 10);
+                                          
+                                          if (rowCount > 0 && colCount > 0) {
+                                            let tableHtml = '<table border="1" style="border-collapse: collapse; width: 100%;">';
+                                            for (let i = 0; i < rowCount; i++) {
+                                              tableHtml += '<tr>';
+                                              for (let j = 0; j < colCount; j++) {
+                                                tableHtml += '<td style="padding: 8px; border: 1px solid #000;">&nbsp;</td>';
+                                              }
+                                              tableHtml += '</tr>';
+                                            }
+                                            tableHtml += '</table>';
+                                            
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, tableHtml);
+                                            } catch (err) {
+                                              const selection = iframeDoc.getSelection();
+                                              if (selection && selection.rangeCount > 0) {
+                                                const range = selection.getRangeAt(0);
+                                                const tempDiv = iframeDoc.createElement('div');
+                                                tempDiv.innerHTML = tableHtml;
+                                                const fragment = iframeDoc.createDocumentFragment();
+                                                while (tempDiv.firstChild) {
+                                                  fragment.appendChild(tempDiv.firstChild);
+                                                }
+                                                range.insertNode(fragment);
+                                              }
+                                            }
+                                          }
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="표"
+                                    >
+                                      <Table size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                        if (iframeDoc) {
+                                          const selection = iframeDoc.getSelection();
+                                          if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
+                                            const range = selection.getRangeAt(0);
+                                            const selectedText = range.toString();
+                                            
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, `<sup>${selectedText}</sup>`);
+                                            } catch (err) {
+                                              const sup = iframeDoc.createElement('sup');
+                                              sup.textContent = selectedText;
+                                              range.deleteContents();
+                                              range.insertNode(sup);
+                                            }
+                                          } else {
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, '<sup></sup>');
+                                            } catch (err) {
+                                              const selection = iframeDoc.getSelection();
+                                              if (selection && selection.rangeCount > 0) {
+                                                const range = selection.getRangeAt(0);
+                                                const sup = iframeDoc.createElement('sup');
+                                                sup.innerHTML = '&nbsp;';
+                                                range.insertNode(sup);
+                                              }
+                                            }
+                                          }
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="위 첨자"
+                                    >
+                                      <Superscript size={16} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
+                                        if (iframeDoc) {
+                                          const selection = iframeDoc.getSelection();
+                                          if (selection && selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) {
+                                            const range = selection.getRangeAt(0);
+                                            const selectedText = range.toString();
+                                            
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, `<sub>${selectedText}</sub>`);
+                                            } catch (err) {
+                                              const sub = iframeDoc.createElement('sub');
+                                              sub.textContent = selectedText;
+                                              range.deleteContents();
+                                              range.insertNode(sub);
+                                            }
                                 } else {
-                                  console.log('⚠️ Step 5 컴포넌트 편집 undo stack이 비어있습니다');
-                                }
-                              } else if (mode === 'text') {
-                                // 텍스트 편집 모드: 브라우저 기본 undo 사용 (텍스트 변경만)
+                                            try {
+                                              iframeDoc.execCommand('insertHTML', false, '<sub></sub>');
+                                            } catch (err) {
+                                              const selection = iframeDoc.getSelection();
+                                              if (selection && selection.rangeCount > 0) {
+                                                const range = selection.getRangeAt(0);
+                                                const sub = iframeDoc.createElement('sub');
+                                                sub.innerHTML = '&nbsp;';
+                                                range.insertNode(sub);
+                                              }
+                                            }
+                                          }
+                                        }
+                                        setShowMoreMenu(false);
+                                      }}
+                                      style={{
+                                        padding: '4px 8px',
+                                        fontSize: '11px',
+                                        border: '1px solid #A9A9A9',
+                                        borderRadius: '3px',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#000000',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                      title="아래 첨자"
+                                    >
+                                      <Subscript size={16} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ width: '1px', height: '20px', backgroundColor: '#C0C0C0', margin: '0 4px' }} />
+                              <button
+                                onClick={() => {
+                                  const iframe = translatedIframeRef.current;
+                                  const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
+                                  if (!iframeDoc) return;
+                                  
+                                  if (mode === 'text') {
+                                    iframeDoc.body.setAttribute('tabindex', '-1');
+                                    iframeDoc.body.focus();
                                 iframeDoc.execCommand('undo', false);
                                 const updatedHtml = iframeDoc.documentElement.outerHTML;
                                 currentHtmlRef.current = updatedHtml;
                                 onTranslatedChange(updatedHtml);
-                                console.log('↶ Step 5 텍스트 편집 실행 취소 완료 (브라우저 기본 undo)');
-                              }
-                            }}
-                            style={{ fontSize: '11px', padding: '4px 8px' }}
-                            title="실행 취소 (Ctrl+Z)"
-                          >
-                            ↶
-                          </Button>
-                          <Button
-                            variant="secondary"
+                                  } else {
+                                    if (undoStackRef.current.length > 0) {
+                                      const currentHtml = iframeDoc.documentElement.outerHTML;
+                                      redoStackRef.current.push(currentHtml);
+                                      const previousHtml = undoStackRef.current.pop() || '';
+                                      iframeDoc.open();
+                                      iframeDoc.write(previousHtml);
+                                      iframeDoc.close();
+                                      currentHtmlRef.current = previousHtml;
+                                      onTranslatedChange(previousHtml);
+                                      setSelectedElements([]);
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="실행 취소 (Ctrl/Cmd+Z)"
+                              >
+                                <Undo2 size={16} color="#000000" />
+                              </button>
+                              <button
                             onClick={() => {
                               const iframe = translatedIframeRef.current;
                               const iframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
                               if (!iframeDoc) return;
 
-                              // ⭐ 모드에 따라 다른 redo 동작
-                              if (mode === 'component') {
-                                // 컴포넌트 편집 모드: 컴포넌트 편집 redo stack 사용
+                                  if (mode === 'text') {
+                                    iframeDoc.body.setAttribute('tabindex', '-1');
+                                    iframeDoc.body.focus();
+                                    iframeDoc.execCommand('redo', false);
+                                    const updatedHtml = iframeDoc.documentElement.outerHTML;
+                                    currentHtmlRef.current = updatedHtml;
+                                    onTranslatedChange(updatedHtml);
+                                  } else {
                                 if (redoStackRef.current.length > 0) {
-                                  // 현재 상태를 undo stack에 저장
                                   const currentHtml = iframeDoc.documentElement.outerHTML;
                                   undoStackRef.current.push(currentHtml);
-                                  
-                                  // redo stack에서 다음 상태 가져오기
                                   const nextHtml = redoStackRef.current.pop() || '';
-                                  
-                                  // iframe에 다음 HTML 적용
                                   iframeDoc.open();
                                   iframeDoc.write(nextHtml);
                                   iframeDoc.close();
-                                  
-                                  // currentHtmlRef 업데이트
                                   currentHtmlRef.current = nextHtml;
                                   onTranslatedChange(nextHtml);
-                                  
-                                  // 컴포넌트 편집 모드 다시 초기화
-                                  setTimeout(() => {
-                                    const newIframeDoc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                                    if (!newIframeDoc) return;
-                                    
-                                    // contentEditable 비활성화
-                                    const editableElements = newIframeDoc.querySelectorAll('[contenteditable="true"]');
-                                    editableElements.forEach((el) => {
-                                      (el as HTMLElement).contentEditable = 'false';
-                                    });
-                                    
-                                    // CSS 스타일 추가 (useEffect와 동일)
-                                    const existingStyle = newIframeDoc.getElementById('editor-styles');
-                                    if (existingStyle) {
-                                      existingStyle.remove();
-                                    }
-                                    const style = newIframeDoc.createElement('style');
-                                    style.id = 'editor-styles';
-                                    style.textContent = `
-                                      div[data-component-editable],
-                                      section[data-component-editable],
-                                      article[data-component-editable],
-                                      header[data-component-editable],
-                                      footer[data-component-editable],
-                                      main[data-component-editable],
-                                      aside[data-component-editable],
-                                      nav[data-component-editable],
-                                      p[data-component-editable],
-                                      h1[data-component-editable],
-                                      h2[data-component-editable],
-                                      h3[data-component-editable],
-                                      h4[data-component-editable],
-                                      h5[data-component-editable],
-                                      h6[data-component-editable],
-                                      a[data-component-editable] {
-                                        outline: 1px dashed #C0C0C0 !important;
-                                        cursor: pointer !important;
-                                      }
-                                      div[data-component-editable]:hover,
-                                      section[data-component-editable]:hover,
-                                      article[data-component-editable]:hover,
-                                      p[data-component-editable]:hover,
-                                      h1[data-component-editable]:hover,
-                                      h2[data-component-editable]:hover,
-                                      h3[data-component-editable]:hover,
-                                      a[data-component-editable]:hover {
-                                        outline: 2px solid #808080 !important;
-                                      }
-                                      .component-selected {
-                                        outline: 4px solid #28a745 !important;
-                                        outline-offset: 3px !important;
-                                        background-color: rgba(40, 167, 69, 0.25) !important;
-                                        box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.4), 0 4px 12px rgba(40, 167, 69, 0.5) !important;
-                                        position: relative !important;
-                                        transition: all 0.2s ease !important;
-                                      }
-                                      .component-selected::after {
-                                        content: '✓ 선택됨';
-                                        position: fixed;
-                                        top: 10px;
-                                        right: 10px;
-                                        background: linear-gradient(135deg, #28a745, #20c997);
-                                        color: white;
-                                        padding: 6px 12px;
-                                        border-radius: 6px;
-                                        font-size: 14px;
-                                        font-weight: 600;
-                                        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.5);
-                                        z-index: 999999;
-                                        animation: fadeIn 0.2s ease;
-                                      }
-                                      @keyframes fadeIn {
-                                        from { opacity: 0; transform: translateY(-10px); }
-                                        to { opacity: 1; transform: translateY(0); }
-                                      }
-                                    `;
-                                    newIframeDoc.head.appendChild(style);
-                                    
-                                    // 컴포넌트 클릭 핸들러 추가
-                                    const componentElements = newIframeDoc.querySelectorAll('div, section, article, header, footer, main, aside, nav, p, h1, h2, h3, h4, h5, h6, a');
-                                    
-                                    const handleComponentClick = (e: Event) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      
-                                      const target = e.target as HTMLElement;
-                                      if (!target || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'HEAD', 'BODY'].includes(target.tagName)) return;
-                                      
-                                      const editableElement = target.closest('[data-component-editable]') as HTMLElement;
-                                      if (!editableElement) return;
-                                      
-                                      const isSelected = editableElement.classList.contains('component-selected');
-                                      
-                                      if (isSelected) {
-                                        editableElement.classList.remove('component-selected');
-                                        editableElement.style.outline = '';
-                                        editableElement.style.boxShadow = '';
-                                        editableElement.style.backgroundColor = '';
-                                        editableElement.style.outlineOffset = '';
-                                        setSelectedElements(prev => prev.filter(el => el !== editableElement));
-                                      } else {
-                                        editableElement.classList.add('component-selected');
-                                        editableElement.style.outline = '';
-                                        editableElement.style.boxShadow = '';
-                                        editableElement.style.backgroundColor = '';
-                                        editableElement.style.outlineOffset = '';
-                                        setSelectedElements(prev => [...prev, editableElement]);
-                                      }
-                                    };
-                                    
-                                    componentElements.forEach((el) => {
-                                      if (el.tagName && !['SCRIPT', 'STYLE', 'NOSCRIPT', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) {
-                                        const htmlEl = el as HTMLElement;
-                                        htmlEl.setAttribute('data-component-editable', 'true');
-                                        htmlEl.style.cursor = 'pointer';
-                                        htmlEl.style.outline = '';
-                                        
-                                        // 기존 핸들러 제거 후 새로 추가
-                                        const existingHandler = componentClickHandlersRef.current.get(htmlEl);
-                                        if (existingHandler) {
-                                          htmlEl.removeEventListener('click', existingHandler, true);
-                                        }
-                                        htmlEl.addEventListener('click', handleComponentClick, true);
-                                        componentClickHandlersRef.current.set(htmlEl, handleComponentClick);
-                                      }
-                                    });
-                                    
-                                    // 링크 클릭 방지 핸들러 추가
-                                    const allLinks = newIframeDoc.querySelectorAll('a');
-                                    const preventLinkNavigation = (e: Event) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      e.stopImmediatePropagation();
-                                      return false;
-                                    };
-                                    
-                                    allLinks.forEach(link => {
-                                      const htmlLink = link as HTMLElement;
-                                      const existingLinkHandler = linkClickHandlersRef.current.get(htmlLink);
-                                      if (existingLinkHandler) {
-                                        htmlLink.removeEventListener('click', existingLinkHandler, true);
-                                      }
-                                      htmlLink.addEventListener('click', preventLinkNavigation, true);
-                                      linkClickHandlersRef.current.set(htmlLink, preventLinkNavigation);
-                                      htmlLink.style.cursor = 'pointer';
-                                    });
-                                    
-                                    // iframe 포커스 설정
-                                    if (newIframeDoc.body) {
-                                      newIframeDoc.body.setAttribute('tabindex', '-1');
-                                      newIframeDoc.body.focus();
-                                    }
-                                  }, 100);
-                                  
                                   setSelectedElements([]);
-                                  
-                                  console.log('↷ Step 5 컴포넌트 편집 다시 실행 완료. 남은 redo:', redoStackRef.current.length);
-                                } else {
-                                  console.log('⚠️ Step 5 컴포넌트 편집 redo stack이 비어있습니다');
-                                }
-                              } else if (mode === 'text') {
-                                // 텍스트 편집 모드: 브라우저 기본 redo 사용 (텍스트 변경만)
-                                iframeDoc.execCommand('redo', false);
-                                const updatedHtml = iframeDoc.documentElement.outerHTML;
-                                currentHtmlRef.current = updatedHtml;
-                                onTranslatedChange(updatedHtml);
-                                console.log('↷ Step 5 텍스트 편집 다시 실행 완료 (브라우저 기본 redo)');
-                              }
-                            }}
-                            style={{ fontSize: '11px', padding: '4px 8px' }}
-                            title="다시 실행 (Ctrl+Y)"
-                          >
-                            ↷
-                          </Button>
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #A9A9A9',
+                                  borderRadius: '3px',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#000000',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                title="다시 실행 (Ctrl/Cmd+Y)"
+                              >
+                                <Redo2 size={16} color="#000000" />
+                              </button>
+                            </>
+                          )}
                         </div>
                         {mode === 'component' && (
                           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -4603,6 +5085,7 @@ const NewTranslation: React.FC = () => {
   const { user } = useUser();
   const { setIsCollapsed } = useSidebar();
   const [currentStep, setCurrentStep] = useState(1);
+  
   // ⭐ localStorage에서 draft 복원 (뒤로가기 대응)
   const loadDraftFromStorage = (): TranslationDraft | null => {
     try {
@@ -5169,55 +5652,55 @@ const NewTranslation: React.FC = () => {
       >
         {/* 왼쪽: STEP 정보 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
-          <div
-            style={{
-              fontSize: '13px',
-              fontWeight: 500,
-              color: '#000000',
-              fontFamily: 'system-ui, Pretendard, sans-serif',
-            }}
-          >
-            STEP {currentStep} / 6
-          </div>
-          <div
-            style={{
-              fontSize: '12px',
-              color: '#696969',
-              fontFamily: 'system-ui, Pretendard, sans-serif',
-              fontWeight: 500,
-            }}
-          >
-            {currentStep === 1 && '가져올 웹사이트 주소 입력'}
-            {currentStep === 2 && '영역 선택'}
-            {currentStep === 3 && '번역 전 편집'}
-            {currentStep === 4 && '번역 실행'}
-            {currentStep === 5 && '번역 후 편집'}
-            {currentStep === 6 && '문서 정보 입력 및 생성'}
-          </div>
-          <div
-            style={{
-              fontSize: '12px',
-              color: '#696969',
-              fontFamily: 'system-ui, Pretendard, sans-serif',
-            }}
-          >
-            {lastSaved ? `마지막 저장: ${lastSaved.toLocaleTimeString()}` : '저장되지 않음'}
-          </div>
-          {saveError && (
+            <div
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                color: '#000000',
+                fontFamily: 'system-ui, Pretendard, sans-serif',
+              }}
+            >
+              STEP {currentStep} / 6
+            </div>
             <div
               style={{
                 fontSize: '12px',
-                color: '#000000',
+                color: '#696969',
                 fontFamily: 'system-ui, Pretendard, sans-serif',
-                backgroundColor: '#D3D3D3',
-                padding: '4px 8px',
-                borderRadius: '4px',
+                fontWeight: 500,
               }}
             >
-              {saveError}
+              {currentStep === 1 && '가져올 웹사이트 주소 입력'}
+              {currentStep === 2 && '영역 선택'}
+              {currentStep === 3 && '번역 전 편집'}
+              {currentStep === 4 && '번역 실행'}
+              {currentStep === 5 && '번역 후 편집'}
+              {currentStep === 6 && '문서 정보 입력 및 생성'}
             </div>
-          )}
-        </div>
+            <div
+              style={{
+                fontSize: '12px',
+                color: '#696969',
+                fontFamily: 'system-ui, Pretendard, sans-serif',
+              }}
+            >
+              {lastSaved ? `마지막 저장: ${lastSaved.toLocaleTimeString()}` : '저장되지 않음'}
+            </div>
+            {saveError && (
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#000000',
+                  fontFamily: 'system-ui, Pretendard, sans-serif',
+                  backgroundColor: '#D3D3D3',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                }}
+              >
+                {saveError}
+              </div>
+            )}
+          </div>
 
         {/* 중앙: 문서 보기 옵션 (Step 5일 때만 표시) */}
         {currentStep === 5 && (
