@@ -5539,7 +5539,7 @@ const NewTranslation: React.FC = () => {
     setSaveError(null);
 
     try {
-      // 1. 문서 생성
+      // 1. 문서 생성 (또는 기존 문서 업데이트)
       const response = await documentApi.createDocument({
         title: data.title,
         originalUrl: draft.url,
@@ -5550,9 +5550,18 @@ const NewTranslation: React.FC = () => {
         status: data.status,
       });
       setDocumentId(response.id);
-      console.log('✅ 문서 생성 완료:', response.id);
+      console.log('✅ 문서 생성/업데이트 완료:', response.id);
 
-      // 2. 원문 버전 생성 (선택한 영역)
+      // 2. 기존 버전 삭제 (Step 6에서 새로 생성하기 전에 기존 버전 정리)
+      try {
+        await documentApi.deleteAllVersions(response.id);
+        console.log('🗑️ 기존 버전 삭제 완료');
+      } catch (error: any) {
+        console.warn('⚠️ 기존 버전 삭제 실패 (무시):', error);
+        // 버전이 없을 수도 있으므로 에러는 무시
+      }
+
+      // 3. 원문 버전 생성 (선택한 영역)
       await documentApi.createDocumentVersion(response.id, {
         versionType: 'ORIGINAL',
         content: draft.editedHtml || draft.originalHtmlWithIds || draft.originalHtml,
@@ -5560,7 +5569,7 @@ const NewTranslation: React.FC = () => {
       });
       console.log('✅ 원문 버전 저장 완료');
 
-      // 3. AI 번역 버전 생성
+      // 4. AI 번역 버전 생성
       if (draft.translatedHtml) {
         await documentApi.createDocumentVersion(response.id, {
           versionType: 'AI_DRAFT',
@@ -5593,22 +5602,17 @@ const NewTranslation: React.FC = () => {
 
   const handleSaveDraft = async () => {
     if (!documentId) {
-      // 문서가 없으면 먼저 생성
+      // 문서가 없으면 먼저 생성 (버전은 생성하지 않음 - Step 6에서만 생성)
       try {
         const response = await documentApi.createDocument({
           title: `번역 문서 - ${new Date().toLocaleString()}`,
           originalUrl: draft.url,
-          sourceLang: 'EN', // TODO: 실제 언어 감지
-          targetLang: 'KO',
+          sourceLang: draft.sourceLang || 'auto',
+          targetLang: draft.targetLang || 'ko',
         });
         setDocumentId(response.id);
         
-        // 원문 버전 생성
-        await documentApi.createDocumentVersion(response.id, {
-          versionType: 'ORIGINAL',
-          content: draft.originalHtml,
-          isFinal: false,
-        });
+        // ⭐ 버전은 생성하지 않음 (Step 6에서만 생성)
 
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
@@ -5618,22 +5622,9 @@ const NewTranslation: React.FC = () => {
         setSaveError(error?.response?.data?.message || '저장 실패');
       }
     } else {
-      // 문서가 있으면 버전 업데이트
+      // 문서가 있으면 문서만 업데이트 (버전은 생성하지 않음)
       try {
-        if (draft.editedHtml && draft.editedHtml !== draft.originalHtml) {
-          await documentApi.createDocumentVersion(documentId, {
-            versionType: 'MANUAL_TRANSLATION',
-            content: draft.editedHtml,
-            isFinal: false,
-          });
-        }
-        if (draft.translatedHtml) {
-          await documentApi.createDocumentVersion(documentId, {
-            versionType: 'AI_DRAFT',
-            content: draft.translatedHtml,
-            isFinal: false,
-          });
-        }
+        // ⭐ 버전 생성 로직 제거 - Step 6에서만 버전 생성
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
         setSaveError(null);

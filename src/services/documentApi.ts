@@ -123,6 +123,13 @@ export const documentApi = {
   },
 
   /**
+   * 문서의 모든 버전 삭제
+   */
+  deleteAllVersions: async (documentId: number): Promise<void> => {
+    await apiClient.delete(`/documents/${documentId}/versions`);
+  },
+
+  /**
    * 문서 버전 목록 조회
    */
   getDocumentVersions: async (documentId: number): Promise<DocumentVersionResponse[]> => {
