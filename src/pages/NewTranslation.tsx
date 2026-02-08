@@ -185,58 +185,50 @@ const Step2AreaSelection: React.FC<{
   const [hoveredAreaId, setHoveredAreaId] = React.useState<string | null>(null);
   const [pageLoaded, setPageLoaded] = React.useState(false);
   
-  // 이벤트 리스너를 추적하기 위한 ref
   const listenersAttached = React.useRef(false);
+  const initialRestoreDone = React.useRef(false);
+  const isUserInteraction = React.useRef(false);
   
-  // selectedAreas가 변경될 때마다 현재 iframe HTML 저장 및 선택 상태 동기화
+  // 초기 로드 시 한 번만 선택 상태 복원
   React.useEffect(() => {
-    if (!iframeRef.current || !pageLoaded) return;
-    
-      const iframe = iframeRef.current;
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!iframeDoc) return;
-    
-    // ⭐ iframe의 선택 상태를 selectedAreas와 동기화
-    // 1. 모든 선택 상태 제거 (초기화 시 자동 선택 문제 해결)
-    iframeDoc.querySelectorAll('.transflow-selected').forEach(el => {
-      el.classList.remove('transflow-selected');
-    });
-    
-    // 2. selectedAreas에 있는 요소만 다시 선택 표시
-    const selectedIds = new Set(selectedAreas.map(area => area.id));
-    selectedIds.forEach(id => {
-      const el = iframeDoc.querySelector(`[data-transflow-id="${id}"]`) as HTMLElement;
-      if (el) {
-        el.classList.add('transflow-selected');
-      }
-    });
-    
-    console.log('🔄 Step 2 선택 상태 동기화 완료:', selectedIds.size, '개 영역');
-    
-    // 3. iframe HTML 저장
-    if (onHtmlUpdate && selectedAreas.length > 0) {
-        const currentHtml = iframeDoc.documentElement.outerHTML;
-        onHtmlUpdate(currentHtml);
-        console.log('💾 STEP 2 iframe HTML 저장 완료 (data-transflow-id 포함)');
-      }
-  }, [selectedAreas, onHtmlUpdate, pageLoaded]);
-  
-  // ⭐ Step 2 진입 시 초기화: 모든 선택 상태 제거 (자동 선택 문제 해결)
-  React.useEffect(() => {
-    if (!iframeRef.current || !pageLoaded) return;
+    if (!iframeRef.current || !pageLoaded || initialRestoreDone.current) return;
     
     const iframe = iframeRef.current;
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!iframeDoc) return;
     
-    // selectedAreas가 비어있을 때 모든 선택 상태 제거
-    if (selectedAreas.length === 0) {
-      iframeDoc.querySelectorAll('.transflow-selected').forEach(el => {
-        el.classList.remove('transflow-selected');
+    if (selectedAreas.length > 0) {
+      selectedAreas.forEach(area => {
+        const el = iframeDoc.querySelector(`[data-transflow-id="${area.id}"]`) as HTMLElement;
+        if (el) {
+          el.classList.add('transflow-selected');
+        }
       });
-      console.log('🔄 Step 2 초기화: 모든 선택 상태 제거');
     }
-  }, [pageLoaded]); // pageLoaded가 true가 될 때만 실행
+    
+    if (onHtmlUpdate) {
+      const currentHtml = iframeDoc.documentElement.outerHTML;
+      onHtmlUpdate(currentHtml);
+    }
+    
+    initialRestoreDone.current = true;
+  }, [pageLoaded]);
+  
+  // 사용자 인터랙션 후 selectedAreas 변경 시에만 동기화
+  React.useEffect(() => {
+    if (!iframeRef.current || !pageLoaded || !initialRestoreDone.current || !isUserInteraction.current) return;
+    
+    const iframe = iframeRef.current;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) return;
+    
+    if (onHtmlUpdate) {
+      const currentHtml = iframeDoc.documentElement.outerHTML;
+      onHtmlUpdate(currentHtml);
+    }
+    
+    isUserInteraction.current = false;
+  }, [selectedAreas]);
 
   // ⭐ hoveredAreaId가 변경될 때 iframe에서 해당 영역 하이라이트
   React.useEffect(() => {
@@ -267,7 +259,6 @@ const Step2AreaSelection: React.FC<{
   const enableElementSelection = (iframeDoc: Document) => {
     // 이미 리스너가 붙어있으면 중복 방지
     if (listenersAttached.current) {
-      console.log('⚠️ 이미 리스너가 붙어있음, 스킵');
       return;
     }
     // 기존 스타일 제거
@@ -333,7 +324,6 @@ const Step2AreaSelection: React.FC<{
     
     let highlightedElement: HTMLElement | null = null;
     
-    // 선택된 요소 업데이트 함수 (Translation.jsx와 동일)
     const updateSelectedElements = () => {
       const newSelected: any[] = [];
       iframeDoc.querySelectorAll('.transflow-selected').forEach((el) => {
@@ -345,25 +335,24 @@ const Step2AreaSelection: React.FC<{
           });
         }
       });
-      console.log('✅ 선택된 요소 업데이트:', newSelected.length, '개');
-      // 새로 선택된 요소만 onAreaSelect 호출
+      
       newSelected.forEach(item => {
         const existingArea = selectedAreas.find(area => area.id === item.id);
         if (!existingArea) {
-          // 선택자 생성
           const el = iframeDoc.querySelector(`[data-transflow-id="${item.id}"]`) as HTMLElement;
           let selector = '';
-          if (el.id) {
+          if (el && el.id) {
             selector = `#${el.id}`;
-          } else if (el.className) {
+          } else if (el && el.className) {
             const classes = Array.from(el.classList).filter(c => !c.startsWith('transflow-')).join('.');
             if (classes) {
               selector = `${el.tagName.toLowerCase()}.${classes}`;
             }
-          } else {
+          } else if (el) {
             selector = el.tagName.toLowerCase();
           }
           
+          isUserInteraction.current = true;
           onAreaSelect({
             id: item.id,
             selector,
@@ -397,40 +386,30 @@ const Step2AreaSelection: React.FC<{
       }
     };
     
-    // 클릭 시 요소 선택/해제 (토글) - Translation.jsx와 동일
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!target || target === iframeDoc.body || target === iframeDoc.documentElement) return;
       if (target.tagName === 'SCRIPT' || target.tagName === 'STYLE' || target.tagName === 'NOSCRIPT') return;
       
-      // ⭐ 링크 클릭 방지 (다른 사이트로 이동 방지)
-      const linkElement = target.closest('a') || (target.tagName === 'A' ? target : null);
-      if (linkElement) {
-        e.preventDefault();
+      e.preventDefault();
       e.stopPropagation();
-        e.stopImmediatePropagation();
-      } else {
-        e.stopPropagation();
-      }
       
-      // 링크인 경우 가장 가까운 링크 요소를 선택 대상으로 사용
+      const linkElement = target.closest('a') || (target.tagName === 'A' ? target : null);
       const elementToSelect = linkElement || target;
       
-      // 요소에 고유 ID 부여
       let elementId = elementToSelect.getAttribute('data-transflow-id');
       if (!elementId) {
         elementId = `transflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         elementToSelect.setAttribute('data-transflow-id', elementId);
       }
       
-      // 선택 토글
+      isUserInteraction.current = true;
+      
       if (elementToSelect.classList.contains('transflow-selected')) {
         elementToSelect.classList.remove('transflow-selected');
-        console.log('🔴 선택 해제:', elementId);
         onAreaRemove(elementId);
       } else {
         elementToSelect.classList.add('transflow-selected');
-        console.log('🟢 선택 추가:', elementId, elementToSelect.tagName);
         updateSelectedElements();
       }
       
@@ -465,26 +444,37 @@ const Step2AreaSelection: React.FC<{
         handleClick(e);
       }, true);
       
-      console.log('✅ 이벤트 위임으로 메모리 최적화 완료 (body에만 리스너 추가)');
     }
     
-    // MutationObserver는 제거 (이벤트 위임으로 자동 처리됨)
-    
     listenersAttached.current = true;
-    console.log('✅ 영역 선택 모드 활성화 완료');
   };
 
   useEffect(() => {
-    // 리스너 플래그 초기화
     listenersAttached.current = false;
+    initialRestoreDone.current = false;
+    isUserInteraction.current = false;
+    setPageLoaded(false);
     
     if (iframeRef.current && html) {
       const iframe = iframeRef.current;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
       
       if (iframeDoc) {
-        // HTML 구조 확인 및 보완 (Translation.jsx와 동일)
         let htmlContent = html;
+        
+        // 임시저장에서 불러온 HTML에서 선택 상태 클래스 제거
+        htmlContent = htmlContent.replace(/\s*class="[^"]*transflow-selected[^"]*"/g, (match) => {
+          const cleaned = match.replace(/\btransflow-selected\b\s*/g, '').replace(/\s+/g, ' ').trim();
+          return cleaned === 'class=""' ? '' : cleaned;
+        });
+        htmlContent = htmlContent.replace(/\s*class='[^']*transflow-selected[^']*'/g, (match) => {
+          const cleaned = match.replace(/\btransflow-selected\b\s*/g, '').replace(/\s+/g, ' ').trim();
+          return cleaned === "class=''" ? '' : cleaned;
+        });
+        
+        // 크롤링된 페이지의 스크립트 제거 (변수 중복 선언 오류 방지)
+        htmlContent = htmlContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        
         const hasDoctype = htmlContent.trim().toLowerCase().startsWith('<!doctype');
         const hasHtml = htmlContent.includes('<html');
         const hasBody = htmlContent.includes('<body');
@@ -538,15 +528,13 @@ const Step2AreaSelection: React.FC<{
         const checkAndEnableSelection = () => {
           try {
             if (iframeDoc.body && iframeDoc.body.children.length > 0) {
-              console.log('✅ 영역 선택 모드 활성화 중...');
               enableElementSelection(iframeDoc);
-              setPageLoaded(true); // 활성화 완료 후 상태 업데이트
+              setPageLoaded(true);
             } else {
               setTimeout(checkAndEnableSelection, 100);
             }
           } catch (error) {
             // iframe 내부 스크립트 에러는 무시
-            console.warn('checkAndEnableSelection error (ignored):', error);
           }
         };
         
@@ -5678,6 +5666,17 @@ const NewTranslation: React.FC = () => {
           return;
         }
       }
+      
+      // Step 3에서 Step 2로 돌아갈 때 선택 영역 초기화
+      if (currentStep === 3) {
+        setDraft(prev => ({
+          ...prev,
+          selectedAreas: [],
+          originalHtmlWithIds: '',
+          editedHtml: '',
+        }));
+      }
+      
       setCurrentStep(currentStep - 1);
     }
   };
@@ -5764,9 +5763,16 @@ const NewTranslation: React.FC = () => {
           const parsedData = JSON.parse(doc.draftData);
           console.log('✅ JSON 파싱 성공:', parsedData);
           
-          const savedStep = parsedData.currentStep || 1;
+          let savedStep = parsedData.currentStep || 1;
           const savedDraft = parsedData.draft || {};
           const savedStep6Data = parsedData.step6Data || null;
+
+          // Step 2, 4에서 저장된 경우 Step 3으로 이동
+          // - Step 2: 임시저장 불가 (선택만 하는 단계)
+          // - Step 4: 단순 번역 확인 단계, 편집 내용은 Step 3에서 복원
+          if (savedStep === 2 || savedStep === 4) {
+            savedStep = 3;
+          }
 
           setDraft({
             url: savedDraft.url || doc.originalUrl,
@@ -5785,6 +5791,8 @@ const NewTranslation: React.FC = () => {
           // Step 6 데이터 저장 (Step 6 컴포넌트에서 사용)
           if (savedStep === 6 && savedStep6Data) {
             setStep6Data(savedStep6Data);
+          } else {
+            setStep6Data(null);
           }
           
           console.log('✅ 임시저장 문서 불러오기 완료:', doc.id, 'Step', savedStep);
@@ -5934,7 +5942,7 @@ const NewTranslation: React.FC = () => {
         });
         return (
           <Step3PreEdit
-            html={draft.originalHtmlWithIds || draft.editedHtml || draft.originalHtml}
+            html={draft.editedHtml || draft.originalHtmlWithIds || draft.originalHtml}
             onHtmlChange={(html) => setDraft((prev) => ({ ...prev, editedHtml: html }))}
             selectedAreas={draft.selectedAreas}
           />
@@ -6046,7 +6054,7 @@ const NewTranslation: React.FC = () => {
                 fontFamily: 'system-ui, Pretendard, sans-serif',
               }}
             >
-              {lastSaved ? `마지막 저장: ${lastSaved.toLocaleTimeString()}` : '저장되지 않음'}
+              {currentStep >= 3 && lastSaved ? `마지막 저장: ${lastSaved.toLocaleTimeString()}` : currentStep >= 3 ? '저장되지 않음' : ''}
             </div>
             {saveError && (
               <div
@@ -6169,11 +6177,13 @@ const NewTranslation: React.FC = () => {
           </div>
         )}
 
-        {/* 오른쪽: 임시 저장 버튼 */}
+        {/* 오른쪽: 임시 저장 버튼 (Step 3부터만 표시) */}
         <div>
-          <Button variant="secondary" onClick={() => handleSaveDraft()} style={{ fontSize: '12px', padding: '4px 8px' }}>
-            임시 저장
-          </Button>
+          {currentStep >= 3 && (
+            <Button variant="secondary" onClick={() => handleSaveDraft()} style={{ fontSize: '12px', padding: '4px 8px' }}>
+              임시 저장
+            </Button>
+          )}
         </div>
       </div>
 
