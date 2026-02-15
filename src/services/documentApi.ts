@@ -220,5 +220,13 @@ export const documentApi = {
     const response = await apiClient.get<{ isFavorite: boolean }>(`/documents/${documentId}/favorite`);
     return response.data.isFavorite;
   },
+
+  /**
+   * 문서 삭제
+   */
+  deleteDocument: async (id: number): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.delete<{ success: boolean; message: string }>(`/documents/${id}`);
+    return response.data;
+  },
 };
 
