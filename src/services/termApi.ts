@@ -7,6 +7,7 @@ export interface TermDictionaryResponse {
   sourceLang: string;
   targetLang: string;
   description?: string;
+  deeplGlossaryId?: string; // DeepL Glossary ID
   createdBy?: {
     id: number;
     email: string;

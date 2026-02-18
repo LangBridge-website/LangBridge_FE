@@ -103,7 +103,7 @@ export default function GlossaryManage() {
 
   const handleAddConfirm = async () => {
     try {
-      await termApi.createTerm(formData);
+      const response = await termApi.createTerm(formData);
       setIsAddModalOpen(false);
       setFormData({
         sourceTerm: '',
@@ -113,9 +113,15 @@ export default function GlossaryManage() {
         description: '',
       });
       // 목록 새로고침
-      const response = await termApi.getAllTerms();
-      setTerms(response);
-      alert('용어가 추가되었습니다.');
+      const updatedTerms = await termApi.getAllTerms();
+      setTerms(updatedTerms);
+      
+      // DeepL 연동 상태에 따른 메시지
+      if (response.deeplGlossaryId) {
+        alert(`용어가 추가되었습니다.\n\nDeepL 연동: 성공\nGlossary ID: ${response.deeplGlossaryId.substring(0, 8)}...`);
+      } else {
+        alert('용어가 추가되었습니다.\n\nDeepL 연동: 대기 중 (잠시 후 자동으로 연동됩니다)');
+      }
     } catch (error) {
       console.error('용어 추가 실패:', error);
       alert('용어 추가에 실패했습니다.');
@@ -125,13 +131,19 @@ export default function GlossaryManage() {
   const handleEditConfirm = async () => {
     if (!selectedTerm) return;
     try {
-      await termApi.updateTerm(selectedTerm.id, formData);
+      const response = await termApi.updateTerm(selectedTerm.id, formData);
       setIsEditModalOpen(false);
       setSelectedTerm(null);
       // 목록 새로고침
-      const response = await termApi.getAllTerms();
-      setTerms(response);
-      alert('용어가 수정되었습니다.');
+      const updatedTerms = await termApi.getAllTerms();
+      setTerms(updatedTerms);
+      
+      // DeepL 연동 상태에 따른 메시지
+      if (response.deeplGlossaryId) {
+        alert(`용어가 수정되었습니다.\n\nDeepL 연동: 성공\nGlossary ID: ${response.deeplGlossaryId.substring(0, 8)}...`);
+      } else {
+        alert('용어가 수정되었습니다.\n\nDeepL 연동: 대기 중 (잠시 후 자동으로 연동됩니다)');
+      }
     } catch (error) {
       console.error('용어 수정 실패:', error);
       alert('용어 수정에 실패했습니다.');
@@ -184,11 +196,49 @@ export default function GlossaryManage() {
     {
       key: 'description',
       label: '설명',
-      width: '25%',
+      width: '20%',
       render: (item) => (
         <span style={{ color: colors.primaryText, fontSize: '12px' }}>
           {item.description || '-'}
         </span>
+      ),
+    },
+    {
+      key: 'deeplStatus',
+      label: 'DeepL 연동',
+      width: '12%',
+      render: (item) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {item.deeplGlossaryId ? (
+            <>
+              <span style={{ 
+                color: '#28a745', 
+                fontSize: '12px',
+                fontWeight: 500 
+              }}>
+                ✓ 연동됨
+              </span>
+              <span 
+                style={{ 
+                  color: colors.primaryText, 
+                  fontSize: '10px',
+                  fontFamily: 'monospace',
+                  cursor: 'help'
+                }} 
+                title={item.deeplGlossaryId}
+              >
+                {item.deeplGlossaryId.substring(0, 8)}...
+              </span>
+            </>
+          ) : (
+            <span style={{ 
+              color: '#dc3545', 
+              fontSize: '12px' 
+            }}>
+              ✗ 미연동
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -204,7 +254,7 @@ export default function GlossaryManage() {
     {
       key: 'action',
       label: '액션',
-      width: '15%',
+      width: '13%',
       align: 'right',
       render: (item) => (
         <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
