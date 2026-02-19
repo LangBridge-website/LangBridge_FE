@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { documentApi, DocumentResponse, DocumentVersionResponse } from '../services/documentApi';
 import { colors } from '../constants/designTokens';
 import { Button } from '../components/Button';
 import { StatusBadge } from '../components/StatusBadge';
 import { DocumentState } from '../types/translation';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { formatLastModifiedDateDisplay } from '../utils/dateUtils';
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const from = searchParams.get('from');
   const documentId = id ? parseInt(id, 10) : null;
 
   const [loading, setLoading] = useState(true);
@@ -269,7 +272,7 @@ export default function DocumentDetail() {
         >
           <h2 style={{ color: '#d32f2f', marginBottom: '16px' }}>오류</h2>
           <p style={{ color: colors.primaryText, marginBottom: '16px' }}>{error}</p>
-          <Button variant="secondary" onClick={() => navigate('/documents')}>
+          <Button variant="secondary" onClick={() => navigate(from === 'pending' ? '/translations/pending' : from === 'working' ? '/translations/working' : from === 'favorites' ? '/translations/favorites' : '/documents')}>
             문서 목록으로 돌아가기
           </Button>
         </div>
@@ -297,7 +300,7 @@ export default function DocumentDetail() {
           }}
         >
           <p style={{ color: colors.primaryText }}>문서를 찾을 수 없습니다.</p>
-          <Button variant="secondary" onClick={() => navigate('/documents')}>
+          <Button variant="secondary" onClick={() => navigate(from === 'pending' ? '/translations/pending' : from === 'working' ? '/translations/working' : from === 'favorites' ? '/translations/favorites' : '/documents')}>
             문서 목록으로 돌아가기
           </Button>
         </div>
@@ -366,7 +369,7 @@ export default function DocumentDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
             <Button
               variant="secondary"
-              onClick={() => navigate('/documents')}
+              onClick={() => navigate(from === 'pending' ? '/translations/pending' : from === 'working' ? '/translations/working' : from === 'favorites' ? '/translations/favorites' : '/documents')}
               style={{ fontSize: '12px', padding: '6px 12px' }}
             >
               ← 뒤로가기
@@ -374,6 +377,9 @@ export default function DocumentDetail() {
             
             {document && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '2px' }}>
+                  최근 수정: {formatLastModifiedDateDisplay(document.updatedAt) || '-'}
+                </div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#000000' }}>
                   {document.title}
                 </div>
@@ -393,7 +399,7 @@ export default function DocumentDetail() {
           </div>
           
           {/* 중앙: 문서 보기 옵션 (체크박스로 각 버전 표시/숨김) */}
-          <div style={{ 
+          <div style={{
             display: 'flex', 
             alignItems: 'center', 
             gap: '24px',
@@ -468,6 +474,17 @@ export default function DocumentDetail() {
               </span>
             </label>
           </div>
+
+          {/* 우측: 번역하기 버튼 (번역 대기 문서일 때만) */}
+          {document?.status === 'PENDING_TRANSLATION' && (
+            <Button
+              variant="primary"
+              onClick={() => navigate(`/translations/${documentId}/work`)}
+              style={{ fontSize: '13px', padding: '8px 20px', whiteSpace: 'nowrap' }}
+            >
+              번역하기
+            </Button>
+          )}
         </div>
 
         {/* 3단 레이아웃 */}

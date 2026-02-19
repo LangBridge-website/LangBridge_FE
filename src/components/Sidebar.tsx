@@ -81,13 +81,19 @@ export const Sidebar: React.FC = () => {
 
   // 현재 경로에 따라 자동으로 메뉴 확장
   useEffect(() => {
-    filteredMenu.forEach((item) => {
-      if (item.children) {
-        const hasActiveChild = item.children.some((child) => isActive(child.path));
-        if (hasActiveChild) {
-          setExpandedMenus((prev) => new Set(prev).add(item.key));
+    setExpandedMenus((prev) => {
+      const next = new Set(prev);
+      filteredMenu.forEach((item) => {
+        if (item.children) {
+          const hasActiveChild = item.children.some((child) => isActive(child.path));
+          // 번역 작업 상세(/translations/:id/work)에 있을 때도 '번역 작업' 메뉴 확장 유지
+          const isTranslationWorkPage = item.key === 'translation_work' && /^\/translations\/\d+\/work$/.test(location.pathname);
+          if (hasActiveChild || isTranslationWorkPage) {
+            next.add(item.key);
+          }
         }
-      }
+      });
+      return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { translationWorkApi, LockStatusResponse } from '../services/translationWorkApi';
 import { documentApi, DocumentResponse } from '../services/documentApi';
 import { documentApi as docApi, DocumentVersionResponse } from '../services/documentApi';
@@ -20,6 +20,8 @@ import './TranslationWork.css';
 export default function TranslationWork() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromPath = (location.state as { from?: string } | null)?.from || '/translations/pending';
   const documentId = id ? parseInt(id, 10) : null;
 
   const [loading, setLoading] = useState(true);
@@ -1485,7 +1487,7 @@ export default function TranslationWork() {
         completedParagraphs: Array.from(completedParagraphs),
       });
       alert('인계가 완료되었습니다.');
-      navigate('/translations/pending');
+      navigate(fromPath);
     } catch (error: any) {
       alert('인계 실패: ' + (error.response?.data?.message || error.message));
     }
@@ -1504,7 +1506,7 @@ export default function TranslationWork() {
         completedParagraphs: Array.from(completedParagraphs),
       });
       alert('번역이 완료되었습니다!');
-      navigate('/translations/pending');
+      navigate(fromPath);
     } catch (error: any) {
       alert('완료 처리 실패: ' + (error.response?.data?.message || error.message));
     }
@@ -1535,7 +1537,7 @@ export default function TranslationWork() {
           ⚠️ {error || '문서를 불러올 수 없습니다.'}
         </div>
         <div>
-          <Button variant="secondary" onClick={() => navigate('/translations/pending')}>
+          <Button variant="secondary" onClick={() => navigate(fromPath)}>
             목록으로 돌아가기
           </Button>
         </div>
@@ -1601,7 +1603,7 @@ export default function TranslationWork() {
                 if (!confirmed) return;
               }
               
-              navigate('/translations/pending');
+              navigate(fromPath);
             }} 
             style={{ fontSize: '12px', padding: '6px 12px' }}
           >
