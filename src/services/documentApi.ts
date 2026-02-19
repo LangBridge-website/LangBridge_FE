@@ -190,6 +190,7 @@ export const documentApi = {
     status?: string;
     categoryId?: number;
     excludePendingTranslation?: boolean;
+    title?: string;
   }): Promise<DocumentResponse[]> => {
     const queryParams = new URLSearchParams();
     if (params?.status) {
@@ -200,6 +201,8 @@ export const documentApi = {
     }
     if (params?.excludePendingTranslation) {
       queryParams.append('excludePendingTranslation', 'true');
+    if (params?.title) {
+      queryParams.append('title', params.title);
     }
     const queryString = queryParams.toString();
     const url = `/documents${queryString ? `?${queryString}` : ''}`;
@@ -235,6 +238,14 @@ export const documentApi = {
   isFavorite: async (documentId: number): Promise<boolean> => {
     const response = await apiClient.get<{ isFavorite: boolean }>(`/documents/${documentId}/favorite`);
     return response.data.isFavorite;
+  },
+
+  /**
+   * 문서 삭제
+   */
+  deleteDocument: async (id: number): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.delete<{ success: boolean; message: string }>(`/documents/${id}`);
+    return response.data;
   },
 };
 

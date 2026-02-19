@@ -122,6 +122,11 @@ function App() {
                             <GlossaryManage />
                           </ErrorBoundary>
                         } />
+                        <Route path="/users" element={
+                          <ErrorBoundary>
+                            <UserManagement />
+                          </ErrorBoundary>
+                        } />
                         <Route path="/activity" element={
                           <ErrorBoundary>
                             <Activity />
