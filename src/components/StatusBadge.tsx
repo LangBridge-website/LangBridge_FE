@@ -15,13 +15,14 @@ const statusLabels: Record<DocumentState, string> = {
   PUBLISHED: '게시 완료',
 };
 
+// 상태별 눈에 띄는 배경/텍스트 색상 (구분하기 쉽게)
 const statusStyles: Record<DocumentState, { bg: string; text: string }> = {
-  DRAFT: { bg: '#DCDCDC', text: '#696969' },
-  PENDING_TRANSLATION: { bg: '#DCDCDC', text: '#696969' },
-  IN_TRANSLATION: { bg: '#C0C0C0', text: '#000000' },
-  PENDING_REVIEW: { bg: '#A9A9A9', text: '#FFFFFF' },
-  APPROVED: { bg: '#808080', text: '#FFFFFF' },
-  PUBLISHED: { bg: '#808080', text: '#FFFFFF' },
+  DRAFT: { bg: '#E5E7EB', text: '#4B5563' },           // 회색 - 미시작
+  PENDING_TRANSLATION: { bg: '#DBEAFE', text: '#1D4ED8' }, // 파랑 - 번역 대기
+  IN_TRANSLATION: { bg: '#FFEDD5', text: '#C2410C' },      // 주황 - 번역 중
+  PENDING_REVIEW: { bg: '#EDE9FE', text: '#5B21B6' },      // 보라 - 검토 대기
+  APPROVED: { bg: '#D1FAE5', text: '#047857' },            // 초록 - 승인 완료
+  PUBLISHED: { bg: '#CCFBF1', text: '#0F766E' },           // 청록 - 게시 완료
 };
 
 export function StatusBadge({ status }: StatusBadgeProps) {

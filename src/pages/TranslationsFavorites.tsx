@@ -10,6 +10,7 @@ import { categoryApi, CategoryResponse } from '../services/categoryApi';
 import { translationWorkApi } from '../services/translationWorkApi';
 import { useUser } from '../contexts/UserContext';
 import { formatLastModifiedDate } from '../utils/dateUtils';
+import { StatusBadge } from '../components/StatusBadge';
 
 // DocumentResponse를 DocumentListItem으로 변환
 const convertToDocumentListItem = (
@@ -221,22 +222,7 @@ export default function TranslationsFavorites() {
       key: 'status',
       label: '상태',
       width: '10%',
-      render: (item) => {
-        let statusColor = colors.primaryText;
-        let statusWeight = 400;
-        if (item.status === 'IN_TRANSLATION') {
-          statusColor = '#FF6B00';
-          statusWeight = 600;
-        } else if (item.status === 'APPROVED') {
-          statusColor = '#28A745';
-          statusWeight = 600;
-        }
-        return (
-          <span style={{ color: statusColor, fontSize: '12px', fontWeight: statusWeight }}>
-            {getStatusText(item.status)}
-          </span>
-        );
-      },
+      render: (item) => <StatusBadge status={item.status} />,
     },
     {
       key: 'category',

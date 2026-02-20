@@ -15,9 +15,8 @@ import { formatLastModifiedDate } from '../utils/dateUtils';
 interface ReviewDocumentItem extends DocumentListItem {
   reviewId?: number;
   reviewCreatedAt?: string;
-  reviewerName?: string;
+  translatorName?: string;
   versionNumber?: number;
-  isComplete?: boolean;
 }
 
 export default function Reviews() {
@@ -102,10 +101,14 @@ export default function Reviews() {
             isFinal: false,
             originalUrl: doc.originalUrl,
             reviewId: review?.id,
-            reviewCreatedAt: review?.createdAt ? formatLastModifiedDate(review.createdAt) : undefined,
-            reviewerName: review?.reviewer?.name,
-            versionNumber: review?.documentVersion?.versionNumber,
-            isComplete: review?.isComplete,
+            // 검토 요청일: 리뷰 생성일 또는 문서 상태 변경일(PENDING_REVIEW 전환 시점)
+            reviewCreatedAt: review?.createdAt
+              ? formatLastModifiedDate(review.createdAt)
+              : (doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined),
+            // 담당 번역가: 리뷰의 버전 생성자 또는 문서 마지막 수정자
+            translatorName: review?.translator?.name ?? doc.lastModifiedBy?.name,
+            // 버전: 리뷰의 버전 번호 또는 문서의 현재 버전 번호
+            versionNumber: review?.documentVersion?.versionNumber ?? doc.currentVersionNumber,
           };
         });
         
@@ -220,12 +223,12 @@ export default function Reviews() {
       ),
     },
     {
-      key: 'reviewerName',
-      label: '담당 검토자',
+      key: 'translatorName',
+      label: '담당 번역가',
       width: '12%',
       render: (item) => (
         <span style={{ color: colors.primaryText, fontSize: '12px' }}>
-          {item.reviewerName || '-'}
+          {item.translatorName || '-'}
         </span>
       ),
     },
@@ -251,22 +254,8 @@ export default function Reviews() {
       ),
     },
     {
-      key: 'isComplete',
-      label: '완료 여부',
-      width: '10%',
-      render: (item) => (
-        <span style={{ 
-          color: item.isComplete ? '#28A745' : '#FF6B00', 
-          fontSize: '12px',
-          fontWeight: 500,
-        }}>
-          {item.isComplete ? '완전 번역' : '부분 번역'}
-        </span>
-      ),
-    },
-    {
       key: 'action',
-      label: '액션',
+      label: '',
       width: '13%',
       align: 'right',
       render: (item) => {

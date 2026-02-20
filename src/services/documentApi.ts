@@ -22,6 +22,7 @@ export interface DocumentResponse {
   categoryId?: number;
   status: string;
   currentVersionId?: number;
+  currentVersionNumber?: number;
   estimatedLength?: number;
   versionCount?: number;
   hasVersions?: boolean;

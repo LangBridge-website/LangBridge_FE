@@ -9,6 +9,7 @@ import { documentApi, DocumentResponse, DocumentVersionResponse } from '../servi
 import { categoryApi, CategoryResponse } from '../services/categoryApi';
 import { LockStatusResponse } from '../services/translationWorkApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** 번역 대기 문서 목록에만 나오는 상태 (임시저장/초안 제외) */
 const PENDING_PAGE_STATUSES = [
@@ -289,9 +290,11 @@ export default function TranslationsPending() {
         
         const converted = docsWithLockInfo.map((doc) => {
           const item = convertToDocumentListItem(doc, categoryMap);
-          // 락 정보 및 버전 정보 추가
-          if (doc.lockInfo && doc.lockInfo.lockedBy) {
+          // 작업자: IN_TRANSLATION은 락 보유자, 검토 중/완료는 담당 번역가(마지막 수정자)
+          if (doc.lockInfo?.lockedBy) {
             item.currentWorker = doc.lockInfo.lockedBy.name;
+          } else if (['PENDING_REVIEW', 'APPROVED', 'PUBLISHED'].includes(doc.status) && doc.lastModifiedBy?.name) {
+            item.currentWorker = doc.lastModifiedBy.name; // 검토 중·완료 시 담당 번역가
           }
           if (doc.currentVersionId) {
             item.currentVersionId = doc.currentVersionId;
@@ -436,28 +439,7 @@ export default function TranslationsPending() {
       key: 'status',
       label: '상태',
       width: '10%',
-      render: (item) => {
-        let statusColor = colors.primaryText;
-        let statusWeight = 400;
-        
-        if (item.status === 'IN_TRANSLATION') {
-          statusColor = '#FF6B00'; // 주황색
-          statusWeight = 600;
-        } else if (item.status === 'APPROVED') {
-          statusColor = '#28A745'; // 초록색
-          statusWeight = 600;
-        }
-        
-        return (
-          <span style={{ 
-            color: statusColor, 
-            fontSize: '12px',
-            fontWeight: statusWeight,
-          }}>
-            {getStatusText(item.status)}
-          </span>
-        );
-      },
+      render: (item) => <StatusBadge status={item.status} />,
     },
     {
       key: 'category',

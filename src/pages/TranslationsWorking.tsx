@@ -10,6 +10,7 @@ import { categoryApi } from '../services/categoryApi';
 import { useUser } from '../contexts/UserContext';
 import { translationWorkApi, LockStatusResponse } from '../services/translationWorkApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
+import { StatusBadge } from '../components/StatusBadge';
 
 const categories = ['전체', '웹사이트', '마케팅', '고객지원', '기술문서'];
 
@@ -239,11 +240,7 @@ export default function TranslationsWorking() {
       key: 'status',
       label: '상태',
       width: '10%',
-      render: (item) => (
-        <span style={{ color: '#FF6B00', fontSize: '12px', fontWeight: 600 }}>
-          {getStatusText(item.status)}
-        </span>
-      ),
+      render: (item) => <StatusBadge status={item.status} />,
     },
     {
       key: 'category',

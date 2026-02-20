@@ -321,12 +321,6 @@ const response = await documentApi.getAllDocuments(params);
     }
   };
 
-  const handleDeleteClick = (doc: DocumentListItem, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedDocument(doc);
-    setDeleteModalOpen(true);
-  };
-
   const handleDeleteConfirm = async () => {
     if (!selectedDocument) return;
     try {
@@ -339,12 +333,6 @@ const response = await documentApi.getAllDocuments(params);
       console.error('문서 삭제 실패:', error);
       alert('문서 삭제에 실패했습니다.');
     }
-  };
-
-  const handleLockReleaseClick = (doc: DocumentListItem, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedDocument(doc);
-    setLockReleaseModalOpen(true);
   };
 
   const handleLockReleaseConfirm = async () => {
@@ -566,17 +554,6 @@ const response = await documentApi.getAllDocuments(params);
       ),
     },
     {
-      key: 'isFinal',
-      label: 'Final',
-      width: '8%',
-      align: 'center',
-      render: (item) => (
-        <span style={{ color: item.isFinal ? colors.primaryText : colors.secondaryText }}>
-          {item.isFinal ? '✓' : '-'}
-        </span>
-      ),
-    },
-    {
       key: 'lockStatus',
       label: '작업자',
       width: '10%',
@@ -599,14 +576,9 @@ const response = await documentApi.getAllDocuments(params);
     {
       key: 'action',
       label: '액션',
-      width: isAdmin ? '20%' : '12%',
+      width: '12%',
       align: 'right',
-      render: (item, index) => {
-        const lockStatus = lockStatuses.get(item.id);
-        const isLocked = lockStatus?.locked;
-        const isOldLock = isLockOld(lockStatus?.lockedAt);
-        
-        return (
+      render: (item) => (
           <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <Button
               variant="secondary"
@@ -633,29 +605,8 @@ const response = await documentApi.getAllDocuments(params);
             >
               내보내기
             </Button>
-            {isAdmin && (
-              <>
-                {isLocked && (
-                  <Button
-                    variant={isOldLock ? 'danger' : 'secondary'}
-                    onClick={(e) => handleLockReleaseClick(item, e)}
-                    style={{ fontSize: '12px', padding: '6px 12px' }}
-                  >
-                    편집 권한 회수
-                  </Button>
-                )}
-                <Button
-                  variant="danger"
-                  onClick={(e) => handleDeleteClick(item, e)}
-                  style={{ fontSize: '12px', padding: '6px 12px' }}
-                >
-                  삭제
-                </Button>
-              </>
-            )}
           </div>
-        );
-      },
+        ),
     },
   ];
 

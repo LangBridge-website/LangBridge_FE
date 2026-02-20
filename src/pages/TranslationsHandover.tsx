@@ -9,6 +9,7 @@ import { documentApi, DocumentResponse } from '../services/documentApi';
 import { categoryApi } from '../services/categoryApi';
 import { translationWorkApi } from '../services/translationWorkApi';
 import { formatLastModifiedDate, formatLastModifiedDateDisplay } from '../utils/dateUtils';
+import { StatusBadge } from '../components/StatusBadge';
 
 /** 인계 정보를 포함한 문서 아이템 */
 interface HandoverDocumentItem {
@@ -25,15 +26,6 @@ interface HandoverDocumentItem {
   completedParagraphCount: number;
   estimatedLength?: number;
 }
-
-const STATUS_TEXT: Record<string, string> = {
-  DRAFT: '초안',
-  PENDING_TRANSLATION: '번역 대기',
-  IN_TRANSLATION: '번역 중',
-  PENDING_REVIEW: '검토 대기',
-  APPROVED: '번역 완료',
-  PUBLISHED: '공개됨',
-};
 
 export default function TranslationsHandover() {
   const navigate = useNavigate();
@@ -159,14 +151,7 @@ export default function TranslationsHandover() {
       key: 'status',
       label: '상태',
       width: '9%',
-      render: (item) => {
-        const isReady = item.status === 'PENDING_TRANSLATION';
-        return (
-          <span style={{ fontSize: '12px', color: isReady ? '#28A745' : colors.primaryText, fontWeight: isReady ? 600 : 400 }}>
-            {STATUS_TEXT[item.status] || item.status}
-          </span>
-        );
-      },
+      render: (item) => <StatusBadge status={item.status} />,
     },
     {
       key: 'category',

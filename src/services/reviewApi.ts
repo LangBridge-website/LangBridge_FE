@@ -16,6 +16,11 @@ export interface ReviewResponse {
     email: string;
     name: string;
   };
+  translator?: {
+    id: number;
+    email: string;
+    name: string;
+  };
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   comment?: string;
   checklist?: Record<string, boolean>;
