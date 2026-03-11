@@ -7,7 +7,7 @@ import { colors } from '../constants/designTokens';
 import { Button } from '../components/Button';
 import { documentApi, DocumentResponse, DocumentVersionResponse } from '../services/documentApi';
 import { categoryApi, CategoryResponse } from '../services/categoryApi';
-import { LockStatusResponse } from '../services/translationWorkApi';
+import { translationWorkApi, LockStatusResponse } from '../services/translationWorkApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -102,16 +102,8 @@ const convertToDocumentListItem = (
       const totalParagraphs = countParagraphs(doc.originalVersion.content);
       if (totalParagraphs > 0) {
         // completedParagraphs가 있으면 사용, 없으면 0%
-        const completedCount = doc.lockInfo?.completedParagraphs?.length || 0;
+        const completedCount = doc.completedParagraphs?.length || 0;
         progress = Math.round((completedCount / totalParagraphs) * 100);
-        console.log(`📊 문서 ${doc.id} 진행률 계산:`, {
-          status: doc.status,
-          totalParagraphs,
-          completedCount,
-          progress,
-          hasLockInfo: !!doc.lockInfo,
-          hasCompletedParagraphs: !!doc.lockInfo?.completedParagraphs,
-        });
       } else {
         console.warn(`⚠️ 문서 ${doc.id}: 문단 수가 0입니다.`);
       }
@@ -236,27 +228,11 @@ export default function TranslationsPending() {
         );
         console.log('📌 번역 관련 문서:', pendingDocs.length, '개');
         
-        // 각 문서에 락 정보 및 ORIGINAL 버전 추가
+        // 각 문서에 ORIGINAL 버전 추가 (락 제거됨, completedParagraphs는 문서 응답에 포함)
         const docsWithLockInfo = await Promise.all(
           pendingDocs.map(async (doc) => {
-            let lockInfo = null;
             let originalVersion = null;
             let currentVersionNumber: number | null = null;
-
-            // IN_TRANSLATION 상태인 경우 락 정보 가져오기
-            if (doc.status === 'IN_TRANSLATION') {
-              try {
-                const { translationWorkApi } = await import('../services/translationWorkApi');
-                lockInfo = await translationWorkApi.getLockStatus(doc.id);
-                console.log(`🔒 문서 ${doc.id} 락 정보:`, {
-                  locked: lockInfo?.locked,
-                  hasCompletedParagraphs: !!lockInfo?.completedParagraphs,
-                  completedCount: lockInfo?.completedParagraphs?.length || 0,
-                });
-              } catch (error) {
-                console.warn(`문서 ${doc.id}의 락 정보를 가져올 수 없습니다:`, error);
-              }
-            }
 
             // 진행률 계산을 위해 ORIGINAL 버전 가져오기
             try {
@@ -281,7 +257,7 @@ export default function TranslationsPending() {
 
             return {
               ...doc,
-              lockInfo,
+              lockInfo: null as LockStatusResponse | null,
               originalVersion,
               currentVersionNumber,
             };
@@ -290,11 +266,11 @@ export default function TranslationsPending() {
         
         const converted = docsWithLockInfo.map((doc) => {
           const item = convertToDocumentListItem(doc, categoryMap);
-          // 작업자: IN_TRANSLATION은 락 보유자, 검토 중/완료는 담당 번역가(마지막 수정자)
-          if (doc.lockInfo?.lockedBy) {
-            item.currentWorker = doc.lockInfo.lockedBy.name;
-          } else if (['PENDING_REVIEW', 'APPROVED', 'PUBLISHED'].includes(doc.status) && doc.lastModifiedBy?.name) {
-            item.currentWorker = doc.lastModifiedBy.name; // 검토 중·완료 시 담당 번역가
+          // 작업자: 문서 생성자 또는 마지막 수정자 (락 제거됨)
+          if (['PENDING_REVIEW', 'APPROVED', 'PUBLISHED'].includes(doc.status) && doc.lastModifiedBy?.name) {
+            item.currentWorker = doc.lastModifiedBy.name;
+          } else if (doc.status === 'IN_TRANSLATION' && doc.createdBy?.name) {
+            item.currentWorker = doc.createdBy.name;
           }
           if (doc.currentVersionId) {
             item.currentVersionId = doc.currentVersionId;
@@ -358,8 +334,19 @@ export default function TranslationsPending() {
     return filtered;
   }, [documents, selectedCategory, selectedStatus, sortOption]);
 
-  const handleStartTranslation = (doc: DocumentListItem) => {
-    navigate(`/translations/${doc.id}/work`, { state: { from: '/translations/pending' } });
+  const [startTranslationLoading, setStartTranslationLoading] = useState(false);
+  const handleStartTranslation = async (doc: DocumentListItem) => {
+    if (startTranslationLoading) return;
+    setStartTranslationLoading(true);
+    try {
+      const res = await translationWorkApi.startTranslation(doc.id);
+      navigate(`/translations/${res.id}/work`, { state: { from: '/translations/pending' } });
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || '번역 시작에 실패했습니다.';
+      alert(msg);
+    } finally {
+      setStartTranslationLoading(false);
+    }
   };
 
   const handleViewDetail = (doc: DocumentListItem) => {

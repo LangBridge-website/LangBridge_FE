@@ -102,7 +102,6 @@ export default function Documents() {
   const [favoriteStatus, setFavoriteStatus] = useState<Map<number, boolean>>(new Map());
   const [lockStatuses, setLockStatuses] = useState<Map<number, { locked: boolean; lockedBy?: string; lockedAt?: string }>>(new Map());
   const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
-  const [lockReleaseModalOpen, setLockReleaseModalOpen] = useState<boolean>(false);
   const [manageModalOpen, setManageModalOpen] = useState<boolean>(false);
   const [selectedDocument, setSelectedDocument] = useState<DocumentListItem | null>(null);
   const isAdmin = user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.ADMIN;
@@ -155,35 +154,24 @@ const response = await documentApi.getAllDocuments(params);
     fetchDocuments();
   }, [searchTerm, selectedStatus, selectedCategory]);
 
-  // 찜 상태 및 락 상태 로드
+  // 찜 상태 로드 (락 제거됨)
   useEffect(() => {
     const loadStatuses = async () => {
       try {
         const favoriteMap = new Map<number, boolean>();
-        const lockMap = new Map<number, { locked: boolean; lockedBy?: string; lockedAt?: string }>();
-        
         await Promise.all(
           documents.map(async (doc) => {
             try {
-              const [isFavorite, lockStatus] = await Promise.all([
-                documentApi.isFavorite(doc.id).catch(() => false),
-                translationWorkApi.getLockStatus(doc.id).catch(() => ({ locked: false, canEdit: false })),
-              ]);
+              const isFavorite = await documentApi.isFavorite(doc.id).catch(() => false);
               favoriteMap.set(doc.id, isFavorite);
-              lockMap.set(doc.id, {
-                locked: lockStatus.locked,
-                lockedBy: lockStatus.lockedBy?.name,
-                lockedAt: lockStatus.lockedAt,
-              });
             } catch (error) {
               console.warn(`문서 ${doc.id}의 상태를 가져올 수 없습니다:`, error);
               favoriteMap.set(doc.id, false);
-              lockMap.set(doc.id, { locked: false });
             }
           })
         );
         setFavoriteStatus(favoriteMap);
-        setLockStatuses(lockMap);
+        setLockStatuses(new Map());
       } catch (error) {
         console.error('상태 로드 실패:', error);
       }
@@ -333,32 +321,6 @@ const response = await documentApi.getAllDocuments(params);
       console.error('문서 삭제 실패:', error);
       alert('문서 삭제에 실패했습니다.');
     }
-  };
-
-  const handleLockReleaseConfirm = async () => {
-    if (!selectedDocument) return;
-    try {
-      await translationWorkApi.releaseLockByAdmin(selectedDocument.id);
-      setLockStatuses(prev => {
-        const newMap = new Map(prev);
-        newMap.set(selectedDocument.id, { locked: false });
-        return newMap;
-      });
-      setLockReleaseModalOpen(false);
-      setSelectedDocument(null);
-      alert('편집 권한이 회수되었습니다.');
-    } catch (error) {
-      console.error('편집 권한 회수 실패:', error);
-      alert('편집 권한 회수에 실패했습니다.');
-    }
-  };
-
-  const isLockOld = (lockedAt?: string): boolean => {
-    if (!lockedAt) return false;
-    const lockDate = new Date(lockedAt);
-    const now = new Date();
-    const hoursDiff = (now.getTime() - lockDate.getTime()) / (1000 * 60 * 60);
-    return hoursDiff > 24; // 24시간 이상
   };
 
   const handleExport = async (doc: DocumentListItem) => {
@@ -975,20 +937,8 @@ const response = await documentApi.getAllDocuments(params);
                 <Button variant="secondary" onClick={() => { setManageModalOpen(false); setSelectedDocument(null); }}>
                   닫기
                 </Button>
-                {isAdmin && (() => {
-                  const lockStatus = lockStatuses.get(selectedDocument.id);
-                  const isLocked = lockStatus?.locked;
-                  return (
+                {isAdmin && (
                     <>
-                      {isLocked && (
-                        <Button
-                          variant={isLockOld(lockStatus?.lockedAt) ? 'danger' : 'secondary'}
-                          onClick={handleManageLockRelease}
-                          style={{ fontSize: '13px', padding: '8px 16px' }}
-                        >
-                          편집 권한 회수
-                        </Button>
-                      )}
                       <Button
                         variant="danger"
                         onClick={handleManageDelete}
@@ -997,36 +947,12 @@ const response = await documentApi.getAllDocuments(params);
                         삭제
                       </Button>
                     </>
-                  );
-                })()}
+                  )}
               </div>
             </div>
           </div>
         )}
 
-        {/* 편집 권한 회수 확인 모달 */}
-        <Modal
-          isOpen={lockReleaseModalOpen}
-          onClose={() => {
-            setLockReleaseModalOpen(false);
-            setSelectedDocument(null);
-          }}
-          title="편집 권한 회수"
-          onConfirm={handleLockReleaseConfirm}
-          confirmText="회수"
-          cancelText="취소"
-          variant="danger"
-        >
-          <p>
-            "{selectedDocument?.title}" 문서의 편집 권한을 회수하시겠습니까?
-            {selectedDocument && lockStatuses.get(selectedDocument.id)?.lockedBy && (
-              <>
-                <br />
-                현재 작업자: {lockStatuses.get(selectedDocument.id)?.lockedBy}
-              </>
-            )}
-          </p>
-        </Modal>
       </div>
     </div>
   );

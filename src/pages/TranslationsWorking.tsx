@@ -120,28 +120,14 @@ export default function TranslationsWorking() {
         categoryList.forEach((cat) => map.set(cat.id, cat.name));
 
         const inTranslationDocs = allDocuments.filter((doc) => doc.status === 'IN_TRANSLATION');
-
-        const myWorkingWithLock: { doc: DocumentResponse; lockStatus: LockStatusResponse }[] = [];
-        for (const doc of inTranslationDocs) {
-          try {
-            const lockStatus = await translationWorkApi.getLockStatus(doc.id);
-            if (!lockStatus) continue;
-            const lockedById = lockStatus.lockedBy?.id;
-            const myId = user.id;
-            const isMyLock =
-              lockStatus.locked &&
-              lockStatus.canEdit &&
-              lockedById !== undefined &&
-              myId !== undefined &&
-              Number(lockedById) === Number(myId);
-            if (isMyLock) {
-              myWorkingWithLock.push({ doc, lockStatus });
-            }
-          } catch (_) {}
-        }
+        const myId = user?.id;
+        // 락 제거됨: 복사본의 createdBy가 나인 문서만 "내 작업"
+        const myWorkingDocs = myId != null
+          ? inTranslationDocs.filter((doc) => Number(doc.createdBy?.id) === Number(myId))
+          : [];
 
         const docsWithVersion = await Promise.all(
-          myWorkingWithLock.map(async ({ doc, lockStatus }) => {
+          myWorkingDocs.map(async (doc) => {
             let originalVersion: DocumentVersionResponse | null = null;
             let currentVersionNumber: number | null = null;
             try {
@@ -152,6 +138,7 @@ export default function TranslationsWorking() {
                 currentVersionNumber = currentVer?.versionNumber ?? null;
               }
             } catch (_) {}
+            const lockStatus: LockStatusResponse = { locked: false, canEdit: true, completedParagraphs: doc.completedParagraphs ?? [] };
             return { doc, lockStatus, originalVersion, currentVersionNumber };
           })
         );

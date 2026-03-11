@@ -135,99 +135,12 @@ export default function TranslationWork() {
         console.log('✅ 문서 조회 성공:', doc);
         setDocument(doc);
 
-        // 2. 락 획득 시도 (재시도 로직 포함)
-        console.log('🔒 락 획득 시도:', documentId);
-        let lockAttempts = 0;
-        const maxLockAttempts = 3;
-        let lockAcquired = false;
-        
-        while (!lockAcquired && lockAttempts < maxLockAttempts) {
-          try {
-            lockAttempts++;
-            console.log(`🔒 락 획득 시도 ${lockAttempts}/${maxLockAttempts}:`, documentId);
-            
-            const lock = await translationWorkApi.acquireLock(documentId);
-            console.log('✅ 락 획득 성공:', lock);
-            setLockStatus(lock);
-            
-            // completedParagraphs 초기화
-            if (lock.completedParagraphs && lock.completedParagraphs.length > 0) {
-              console.log('📊 기존 완료된 문단 로드:', lock.completedParagraphs);
-              setCompletedParagraphs(new Set(lock.completedParagraphs));
-            }
-            
-            if (!lock.canEdit) {
-              setError(`이 문서는 ${lock.lockedBy?.name}님이 작업 중입니다.`);
-              setLoading(false);
-              return;
-            }
-            
-            lockAcquired = true;
-            break;
-            
-          } catch (lockError: any) {
-            const status = lockError?.response?.status;
-            
-            // 503 (SERVICE_UNAVAILABLE) 또는 데이터베이스 락 오류인 경우 재시도
-            if ((status === 503 || lockError.message?.includes('LockAcquisitionException')) && 
-                lockAttempts < maxLockAttempts) {
-              console.warn(`⚠️ 락 획득 실패 (${lockAttempts}/${maxLockAttempts}), 재시도 중...`);
-              await new Promise(resolve => setTimeout(resolve, 1000 * lockAttempts)); // 점진적 대기
-              continue;
-            }
-            
-            // 재시도 불가능한 에러 또는 최대 시도 횟수 초과
-            throw lockError;
-          }
+        // 2. 완료된 문단은 문서에서 로드 (락 제거됨)
+        if (doc.completedParagraphs && doc.completedParagraphs.length > 0) {
+          console.log('📊 기존 완료된 문단 로드:', doc.completedParagraphs);
+          setCompletedParagraphs(new Set(doc.completedParagraphs));
         }
-        
-        if (!lockAcquired) {
-          console.error('❌ 락 획득 최종 실패:', documentId);
-          setError('문서 락을 획득할 수 없습니다. 잠시 후 다시 시도해주세요.');
-          setLoading(false);
-          return;
-        }
-        
-        try {
-        } catch (lockError: any) {
-          console.error('❌ 락 획득 최종 실패:', lockError);
-          console.error('락 에러 상세:', {
-            response: lockError.response,
-            data: lockError.response?.data,
-            status: lockError.response?.status,
-            message: lockError.message,
-          });
-          
-          const status = lockError.response?.status;
-          
-          if (status === 409) {
-            // 이미 락이 있는 경우 상태만 확인
-            try {
-              const status = await translationWorkApi.getLockStatus(documentId);
-              setLockStatus(status);
-              
-              // completedParagraphs 초기화
-              if (status.completedParagraphs && status.completedParagraphs.length > 0) {
-                console.log('📊 기존 완료된 문단 로드 (409):', status.completedParagraphs);
-                setCompletedParagraphs(new Set(status.completedParagraphs));
-              }
-              
-              if (!status.canEdit) {
-                setError(`이 문서는 ${status.lockedBy?.name || '다른 사용자'}님이 작업 중입니다.`);
-                setLoading(false);
-                return;
-              }
-            } catch (statusError: any) {
-              console.error('락 상태 확인 실패:', statusError);
-              setError('문서 락 상태를 확인할 수 없습니다.');
-              setLoading(false);
-              return;
-            }
-          } else {
-            // 다른 에러는 상위 catch로 전달
-            throw lockError;
-          }
-        }
+        setLockStatus(null);
 
         // 3. 버전 정보 가져오기
         try {
