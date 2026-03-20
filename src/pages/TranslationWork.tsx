@@ -1848,7 +1848,17 @@ export default function TranslationWork() {
                               <button
                                 onClick={() => {
                                   const iframeDoc = myTranslationIframeRef.current?.contentDocument;
-                                  if (iframeDoc) iframeDoc.execCommand('removeFormat', false);
+                                  if (!iframeDoc) return;
+                                  iframeDoc.execCommand('removeFormat', false);
+                                  // removeFormat이 border-style:solid 만 남기는 문제 수정
+                                  setTimeout(() => {
+                                    iframeDoc.querySelectorAll('*').forEach((el) => {
+                                      const htmlEl = el as HTMLElement;
+                                      if (htmlEl.style && htmlEl.style.borderStyle === 'solid' && !htmlEl.style.borderWidth) {
+                                        htmlEl.style.borderWidth = '0';
+                                      }
+                                    });
+                                  }, 0);
                                 }}
                                 style={{
                                   padding: '4px 8px',

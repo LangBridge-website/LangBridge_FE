@@ -740,6 +740,19 @@ const Step3PreEdit: React.FC<{
     currentHtmlRef.current = updatedHtml;
     onHtmlChange(updatedHtml);
   };
+
+  // removeFormat 후 border-style:solid 잔상 제거
+  // 원인: 웹 크롤링 HTML 내 <em>/<span> 등의 "border: 0px solid" inline style을
+  // removeFormat이 border-width:0 은 삭제하고 border-style:solid 만 남겨서 검은/파란 박스가 생김
+  const fixDanglingBorderStyle = (iframeDoc: Document) => {
+    iframeDoc.querySelectorAll('*').forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      if (htmlEl.style && htmlEl.style.borderStyle === 'solid' && !htmlEl.style.borderWidth) {
+        htmlEl.style.borderWidth = '0';
+      }
+    });
+  };
+
   // 공백 제거용 별도 undo stack
   const spacingUndoStackRef = React.useRef<string[]>([]);
   const spacingRedoStackRef = React.useRef<string[]>([]);
@@ -1779,7 +1792,7 @@ const Step3PreEdit: React.FC<{
                 
                 // 새 선택
                 target.classList.add('selected-for-delete');
-                setSelectedElement(target);
+                setSelectedElements([target]);
               };
               
               allElements.forEach((el) => {
@@ -2559,7 +2572,11 @@ const Step3PreEdit: React.FC<{
                     iframeDoc.body.focus();
                   }
                   iframeDoc.execCommand('removeFormat', false);
-                  syncIframeHtml(iframeDoc);
+                  // removeFormat이 border-style:solid 만 남기는 문제 수정
+                  setTimeout(() => {
+                    fixDanglingBorderStyle(iframeDoc);
+                    syncIframeHtml(iframeDoc);
+                  }, 0);
                 }}
                 style={{
                   padding: '4px 8px',
@@ -5527,7 +5544,17 @@ const Step5ParallelEdit: React.FC<{
                               <button
                                 onClick={() => {
                                   const iframeDoc = translatedIframeRef.current?.contentDocument || translatedIframeRef.current?.contentWindow?.document;
-                                  if (iframeDoc) iframeDoc.execCommand('removeFormat', false);
+                                  if (!iframeDoc) return;
+                                  iframeDoc.execCommand('removeFormat', false);
+                                  // removeFormat이 border-style:solid 만 남기는 문제 수정
+                                  setTimeout(() => {
+                                    iframeDoc.querySelectorAll('*').forEach((el) => {
+                                      const htmlEl = el as HTMLElement;
+                                      if (htmlEl.style && htmlEl.style.borderStyle === 'solid' && !htmlEl.style.borderWidth) {
+                                        htmlEl.style.borderWidth = '0';
+                                      }
+                                    });
+                                  }, 0);
                                 }}
                                 style={{
                                   padding: '4px 8px',
@@ -6567,6 +6594,21 @@ const NewTranslation: React.FC = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  const isLikelyErrorPageResponse = (response: any): boolean => {
+    if (response?.errorPage) return true;
+    if (typeof response?.httpStatus === 'number' && response.httpStatus >= 400) return true;
+    const html = (response?.originalHtml || '').toLowerCase();
+    if (!html) return false;
+    return html.includes('[get] "/api/validate-page-locale')
+      || html.includes('403 forbidden')
+      || html.includes('error: 403')
+      || html.includes('access denied')
+      || html.includes('just a moment')
+      || html.includes('verify you are human')
+      || html.includes('enable javascript and cookies')
+      || html.includes('checking your browser');
+  };
+
   const handleCrawling = async () => {
     if (!draft.url.trim()) {
       setSaveError('URL을 입력해주세요.');
@@ -6601,7 +6643,8 @@ const NewTranslation: React.FC = () => {
         sourceLang: undefined,
       });
 
-      if (response.success) {
+      const errorPageDetected = isLikelyErrorPageResponse(response);
+      if (response.success && !errorPageDetected) {
         console.log('원본 페이지 로드 성공:', {
           hasOriginalHtml: !!response.originalHtml,
           originalHtmlLength: response.originalHtml?.length,
@@ -6666,7 +6709,12 @@ const NewTranslation: React.FC = () => {
         setIsManualPasteMode(false);
         setCurrentStep(2);
       } else {
-        setSaveError(response.errorMessage || '페이지 로드 중 오류가 발생했습니다.');
+        const fallbackMessage = response.errorMessage || '웹 페이지 오류가 감지되어 수동 서식 넣기로 이동합니다.';
+        setSaveError(fallbackMessage);
+        if (errorPageDetected) {
+          handleManualPaste();
+          return;
+        }
       }
     } catch (error: any) {
       console.error('Crawling error:', error);
