@@ -32,6 +32,7 @@ export default function SystemSettings() {
   // 카테고리 관련 상태
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [newCategoryCode, setNewCategoryCode] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [addCategoryLoading, setAddCategoryLoading] = useState(false);
@@ -240,6 +241,11 @@ export default function SystemSettings() {
   };
 
   const handleAddCategory = async () => {
+    if (!newCategoryCode.trim()) {
+      alert('카테고리 코드를 입력해주세요.');
+      return;
+    }
+
     if (!newCategoryName.trim()) {
       alert('카테고리 이름을 입력해주세요.');
       return;
@@ -248,10 +254,12 @@ export default function SystemSettings() {
     try {
       setAddCategoryLoading(true);
       const request: CreateCategoryRequest = {
+        code: newCategoryCode.trim(),
         name: newCategoryName.trim(),
         description: newCategoryDescription.trim() || undefined,
       };
       await categoryApi.createCategory(request);
+      setNewCategoryCode('');
       setNewCategoryName('');
       setNewCategoryDescription('');
       await fetchCategories();
@@ -675,13 +683,45 @@ export default function SystemSettings() {
                     color: colors.primaryText,
                   }}
                 >
+                  카테고리 코드 *
+                </label>
+                <input
+                  type="text"
+                  value={newCategoryCode}
+                  onChange={(e) => setNewCategoryCode(e.target.value)}
+                  placeholder="예: Science, Worldview, Ecosystem"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontSize: '14px',
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '6px',
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleAddCategory();
+                    }
+                  }}
+                />
+              </div>
+
+              <div style={{ flex: '1', minWidth: '200px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    marginBottom: '8px',
+                    color: colors.primaryText,
+                  }}
+                >
                   카테고리 이름 *
                 </label>
                 <input
                   type="text"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="예: 웹사이트, 마케팅, 기술문서"
+                  placeholder="예: 기독교-과학, 기술 문서"
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -733,7 +773,7 @@ export default function SystemSettings() {
             <Button
               variant="primary"
               onClick={handleAddCategory}
-              disabled={addCategoryLoading || !newCategoryName.trim()}
+              disabled={addCategoryLoading || !newCategoryCode.trim() || !newCategoryName.trim()}
               style={{ fontSize: '14px', padding: '10px 20px' }}
             >
               <Plus size={16} style={{ marginRight: '6px' }} />
@@ -783,6 +823,9 @@ export default function SystemSettings() {
                     }}
                   >
                     <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '2px' }}>
+                        {category.code ?? category.name}
+                      </div>
                       <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '4px' }}>
                         {category.name}
                       </div>
