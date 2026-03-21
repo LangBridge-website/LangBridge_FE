@@ -1,16 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { colors } from '../constants/designTokens';
 import { Button } from '../components/Button';
+import { Table, TableColumn } from '../components/Table';
+import { Modal } from '../components/Modal';
 import { settingsApi } from '../services/settingsApi';
 import { categoryApi, CategoryResponse, CreateCategoryRequest } from '../services/categoryApi';
+import { adminApi, UserListItem } from '../services/adminApi';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { useUser } from '../contexts/UserContext';
 import { roleLevelToRole } from '../utils/hasAccess';
 import { UserRole } from '../types/user';
 
+const roleLevelMap: Record<number, string> = {
+  1: '최고 관리자',
+  2: '중간 관리자',
+  3: '번역봉사자',
+};
+
 export default function SystemSettings() {
   const { user } = useUser();
-  const [activeTab, setActiveTab] = useState<'deepl' | 'category'>('deepl');
+  const [activeTab, setActiveTab] = useState<'users' | 'deepl' | 'category'>('users');
 
   // DeepL API 키 관련 상태
   const [apiKey, setApiKey] = useState('');
@@ -23,14 +32,28 @@ export default function SystemSettings() {
   // 카테고리 관련 상태
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [newCategoryCode, setNewCategoryCode] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [addCategoryLoading, setAddCategoryLoading] = useState(false);
   const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editCategoryCode, setEditCategoryCode] = useState('');
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryDescription, setEditCategoryDescription] = useState('');
+  const [updatingCategoryId, setUpdatingCategoryId] = useState<number | null>(null);
+
+  // 유저 관리 관련 상태
+  const [users, setUsers] = useState<UserListItem[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
+  const [newRoleLevel, setNewRoleLevel] = useState<number>(3);
 
   // 권한 체크
   const userRole = user ? roleLevelToRole(user.roleLevel) : null;
   const isAdmin = userRole === UserRole.SUPER_ADMIN || userRole === UserRole.ADMIN;
+  const isSuperAdmin = userRole === UserRole.SUPER_ADMIN;
 
   // DeepL API 키 조회
   useEffect(() => {
@@ -38,6 +61,26 @@ export default function SystemSettings() {
       fetchApiKeyStatus();
     }
   }, [activeTab]);
+
+  // 유저 목록 조회
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        setUsersLoading(true);
+        const response = await adminApi.getAllUsers();
+        setUsers(response);
+      } catch (error) {
+        console.error('사용자 목록 조회 실패:', error);
+        setUsers([]);
+      } finally {
+        setUsersLoading(false);
+      }
+    };
+
+    if (activeTab === 'users' && isSuperAdmin) {
+      fetchUsers();
+    }
+  }, [activeTab, isSuperAdmin]);
 
   // 카테고리 목록 조회
   useEffect(() => {
@@ -57,6 +100,113 @@ export default function SystemSettings() {
       console.error('API 키 상태 조회 실패:', error);
     }
   };
+
+  const handleOpenRoleModal = (user: UserListItem, targetRoleLevel: number) => {
+    setSelectedUser(user);
+    setNewRoleLevel(targetRoleLevel);
+    setIsRoleModalOpen(true);
+  };
+
+  const handleConfirmRoleChange = async () => {
+    if (!selectedUser) return;
+
+    try {
+      await adminApi.updateUserRoleLevel(selectedUser.id, newRoleLevel);
+      setUsers((prev) =>
+        prev.map((u) => (u.id === selectedUser.id ? { ...u, roleLevel: newRoleLevel } : u)),
+      );
+      setIsRoleModalOpen(false);
+      setSelectedUser(null);
+      alert('사용자 역할이 변경되었습니다.');
+    } catch (error) {
+      console.error('역할 변경 실패:', error);
+      alert('역할 변경에 실패했습니다.');
+    }
+  };
+
+  const userStats = {
+    total: users.length,
+    superAdmin: users.filter((u) => u.roleLevel === 1).length,
+    admin: users.filter((u) => u.roleLevel === 2).length,
+    volunteer: users.filter((u) => u.roleLevel === 3).length,
+  };
+
+  const userColumns: TableColumn<UserListItem>[] = [
+    {
+      key: 'name',
+      label: '이름',
+      width: '20%',
+      render: (item) => <span style={{ fontWeight: 500, color: '#000000' }}>{item.name}</span>,
+    },
+    {
+      key: 'email',
+      label: '이메일',
+      width: '25%',
+      render: (item) => (
+        <span style={{ color: colors.primaryText, fontSize: '12px' }}>{item.email}</span>
+      ),
+    },
+    {
+      key: 'roleLevel',
+      label: '역할',
+      width: '15%',
+      render: (item) => (
+        <span style={{ color: colors.primaryText, fontSize: '12px' }}>
+          {roleLevelMap[item.roleLevel] || `레벨 ${item.roleLevel}`}
+        </span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      label: '가입일',
+      width: '20%',
+      render: (item) =>
+        item.createdAt ? (
+          <span style={{ color: colors.secondaryText, fontSize: '12px' }}>
+            {new Date(item.createdAt).toLocaleDateString('ko-KR')}
+          </span>
+        ) : (
+          <span style={{ color: colors.secondaryText, fontSize: '12px' }}>-</span>
+        ),
+    },
+    {
+      key: 'action',
+      label: '중간관리자 설정',
+      width: '20%',
+      align: 'right',
+      render: (item) => {
+        if (item.roleLevel === 1) {
+          return (
+            <span style={{ fontSize: '12px', color: colors.secondaryText }}>
+              최고 관리자는 변경할 수 없습니다
+            </span>
+          );
+        }
+
+        if (item.roleLevel === 2) {
+          return (
+            <Button
+              variant="secondary"
+              onClick={() => handleOpenRoleModal(item, 3)}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              중간관리자 해제
+            </Button>
+          );
+        }
+
+        return (
+          <Button
+            variant="secondary"
+            onClick={() => handleOpenRoleModal(item, 2)}
+            style={{ fontSize: '12px', padding: '6px 12px' }}
+          >
+            중간관리자로 임명
+          </Button>
+        );
+      },
+    },
+  ];
 
   const fetchCategories = async () => {
     try {
@@ -96,6 +246,11 @@ export default function SystemSettings() {
   };
 
   const handleAddCategory = async () => {
+    if (!newCategoryCode.trim()) {
+      alert('카테고리 코드를 입력해주세요.');
+      return;
+    }
+
     if (!newCategoryName.trim()) {
       alert('카테고리 이름을 입력해주세요.');
       return;
@@ -104,10 +259,12 @@ export default function SystemSettings() {
     try {
       setAddCategoryLoading(true);
       const request: CreateCategoryRequest = {
+        code: newCategoryCode.trim(),
         name: newCategoryName.trim(),
         description: newCategoryDescription.trim() || undefined,
       };
       await categoryApi.createCategory(request);
+      setNewCategoryCode('');
       setNewCategoryName('');
       setNewCategoryDescription('');
       await fetchCategories();
@@ -133,6 +290,46 @@ export default function SystemSettings() {
       alert(error.response?.data?.message || '카테고리 삭제에 실패했습니다.');
     } finally {
       setDeletingCategoryId(null);
+    }
+  };
+
+  const handleStartEditCategory = (category: CategoryResponse) => {
+    setEditingCategoryId(category.id);
+    setEditCategoryCode(category.code ?? '');
+    setEditCategoryName(category.name);
+    setEditCategoryDescription(category.description ?? '');
+  };
+
+  const handleCancelEditCategory = () => {
+    setEditingCategoryId(null);
+    setEditCategoryCode('');
+    setEditCategoryName('');
+    setEditCategoryDescription('');
+  };
+
+  const handleUpdateCategory = async (categoryId: number) => {
+    if (!editCategoryCode.trim()) {
+      alert('카테고리 코드를 입력해주세요.');
+      return;
+    }
+    if (!editCategoryName.trim()) {
+      alert('카테고리 이름을 입력해주세요.');
+      return;
+    }
+    try {
+      setUpdatingCategoryId(categoryId);
+      await categoryApi.updateCategory(categoryId, {
+        code: editCategoryCode.trim(),
+        name: editCategoryName.trim(),
+        description: editCategoryDescription.trim() || undefined,
+      });
+      await fetchCategories();
+      handleCancelEditCategory();
+    } catch (error: any) {
+      console.error('카테고리 수정 실패:', error);
+      alert(error.response?.data?.message || '카테고리 수정에 실패했습니다.');
+    } finally {
+      setUpdatingCategoryId(null);
     }
   };
 
@@ -177,6 +374,25 @@ export default function SystemSettings() {
           marginBottom: '24px',
         }}
       >
+        {isSuperAdmin && (
+          <button
+            onClick={() => setActiveTab('users')}
+            style={{
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: 500,
+              color: activeTab === 'users' ? colors.accent : colors.secondaryText,
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderBottom:
+                activeTab === 'users' ? `2px solid ${colors.accent}` : '2px solid transparent',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            유저 관리
+          </button>
+        )}
         <button
           onClick={() => setActiveTab('deepl')}
           style={{
@@ -210,6 +426,143 @@ export default function SystemSettings() {
           카테고리 관리
         </button>
       </div>
+
+      {/* 유저 관리 (최고관리자 전용) */}
+      {activeTab === 'users' && isSuperAdmin && (
+        <div>
+          {/* 통계 카드 */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+              marginBottom: '24px',
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: colors.surface,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '8px',
+                padding: '16px',
+              }}
+            >
+              <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '4px' }}>
+                전체 사용자
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 600, color: '#000000' }}>
+                {userStats.total}
+              </div>
+            </div>
+            <div
+              style={{
+                backgroundColor: colors.surface,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '8px',
+                padding: '16px',
+              }}
+            >
+              <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '4px' }}>
+                최고 관리자
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 600, color: '#000000' }}>
+                {userStats.superAdmin}
+              </div>
+            </div>
+            <div
+              style={{
+                backgroundColor: colors.surface,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '8px',
+                padding: '16px',
+              }}
+            >
+              <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '4px' }}>
+                중간 관리자
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 600, color: '#000000' }}>
+                {userStats.admin}
+              </div>
+            </div>
+            <div
+              style={{
+                backgroundColor: colors.surface,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '8px',
+                padding: '16px',
+              }}
+            >
+              <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '4px' }}>
+                번역봉사자
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 600, color: '#000000' }}>
+                {userStats.volunteer}
+              </div>
+            </div>
+          </div>
+
+          {/* 유저 테이블 */}
+          {usersLoading ? (
+            <div
+              style={{
+                padding: '48px',
+                textAlign: 'center',
+                color: colors.primaryText,
+                fontSize: '13px',
+                backgroundColor: colors.surface,
+                borderRadius: '8px',
+                border: `1px solid ${colors.border}`,
+              }}
+            >
+              로딩 중...
+            </div>
+          ) : users.length === 0 ? (
+            <div
+              style={{
+                padding: '48px',
+                textAlign: 'center',
+                color: colors.primaryText,
+                fontSize: '13px',
+                backgroundColor: colors.surface,
+                borderRadius: '8px',
+                border: `1px solid ${colors.border}`,
+              }}
+            >
+              <p>사용자 목록이 없습니다.</p>
+              <p style={{ marginTop: '8px', fontSize: '12px', color: colors.secondaryText }}>
+                관리자 페이지에서 사용자 생성 후 다시 확인해주세요.
+              </p>
+            </div>
+          ) : (
+            <Table columns={userColumns} data={users} emptyMessage="사용자가 없습니다." />
+          )}
+
+          {/* 역할 변경 모달 */}
+          <Modal
+            isOpen={isRoleModalOpen}
+            onClose={() => {
+              setIsRoleModalOpen(false);
+              setSelectedUser(null);
+            }}
+            title="중간관리자 설정 변경"
+            onConfirm={handleConfirmRoleChange}
+            confirmText="변경"
+            cancelText="취소"
+          >
+            {selectedUser && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p>
+                  <strong>{selectedUser.name}</strong> ({selectedUser.email})의 역할을{' '}
+                  {newRoleLevel === 2 ? '중간관리자(관리자)' : '번역봉사자'}로 변경하시겠습니까?
+                </p>
+                <p style={{ fontSize: '12px', color: colors.secondaryText }}>
+                  * 이 기능은 최고관리자만 사용할 수 있습니다.
+                </p>
+              </div>
+            )}
+          </Modal>
+        </div>
+      )}
 
       {/* DeepL API 키 설정 */}
       {activeTab === 'deepl' && (
@@ -375,13 +728,45 @@ export default function SystemSettings() {
                     color: colors.primaryText,
                   }}
                 >
+                  카테고리 코드 *
+                </label>
+                <input
+                  type="text"
+                  value={newCategoryCode}
+                  onChange={(e) => setNewCategoryCode(e.target.value)}
+                  placeholder="예: Science, Worldview, Ecosystem"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontSize: '14px',
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '6px',
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleAddCategory();
+                    }
+                  }}
+                />
+              </div>
+
+              <div style={{ flex: '1', minWidth: '200px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    marginBottom: '8px',
+                    color: colors.primaryText,
+                  }}
+                >
                   카테고리 이름 *
                 </label>
                 <input
                   type="text"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="예: 웹사이트, 마케팅, 기술문서"
+                  placeholder="예: 기독교-과학, 기술 문서"
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -433,7 +818,7 @@ export default function SystemSettings() {
             <Button
               variant="primary"
               onClick={handleAddCategory}
-              disabled={addCategoryLoading || !newCategoryName.trim()}
+              disabled={addCategoryLoading || !newCategoryCode.trim() || !newCategoryName.trim()}
               style={{ fontSize: '14px', padding: '10px 20px' }}
             >
               <Plus size={16} style={{ marginRight: '6px' }} />
@@ -473,49 +858,124 @@ export default function SystemSettings() {
                   <div
                     key={category.id}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
                       padding: '16px',
                       border: `1px solid ${colors.border}`,
                       borderRadius: '6px',
                       backgroundColor: '#ffffff',
                     }}
                   >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '4px' }}>
-                        {category.name}
-                      </div>
-                      {category.description && (
-                        <div style={{ fontSize: '13px', color: colors.secondaryText }}>
-                          {category.description}
+                    {editingCategoryId === category.id ? (
+                      /* 편집 모드 */
+                      <div>
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1', minWidth: '140px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px', color: colors.primaryText }}>
+                              코드 *
+                            </label>
+                            <input
+                              type="text"
+                              value={editCategoryCode}
+                              onChange={(e) => setEditCategoryCode(e.target.value)}
+                              style={{ width: '100%', padding: '7px 10px', fontSize: '13px', border: `1px solid ${colors.border}`, borderRadius: '4px', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                          <div style={{ flex: '1', minWidth: '140px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px', color: colors.primaryText }}>
+                              이름 *
+                            </label>
+                            <input
+                              type="text"
+                              value={editCategoryName}
+                              onChange={(e) => setEditCategoryName(e.target.value)}
+                              style={{ width: '100%', padding: '7px 10px', fontSize: '13px', border: `1px solid ${colors.border}`, borderRadius: '4px', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                          <div style={{ flex: '2', minWidth: '200px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px', color: colors.primaryText }}>
+                              설명
+                            </label>
+                            <input
+                              type="text"
+                              value={editCategoryDescription}
+                              onChange={(e) => setEditCategoryDescription(e.target.value)}
+                              style={{ width: '100%', padding: '7px 10px', fontSize: '13px', border: `1px solid ${colors.border}`, borderRadius: '4px', boxSizing: 'border-box' }}
+                            />
+                          </div>
                         </div>
-                      )}
-                      <div style={{ fontSize: '12px', color: colors.secondaryText, marginTop: '8px' }}>
-                        생성일: {new Date(category.createdAt).toLocaleDateString('ko-KR')}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => handleUpdateCategory(category.id)}
+                            disabled={updatingCategoryId === category.id}
+                            style={{
+                              padding: '7px 14px', fontSize: '13px', fontWeight: 500,
+                              color: '#ffffff', backgroundColor: '#374151',
+                              border: 'none', borderRadius: '6px',
+                              cursor: updatingCategoryId === category.id ? 'not-allowed' : 'pointer',
+                              opacity: updatingCategoryId === category.id ? 0.6 : 1,
+                            }}
+                          >
+                            {updatingCategoryId === category.id ? '저장 중...' : '저장'}
+                          </button>
+                          <button
+                            onClick={handleCancelEditCategory}
+                            style={{
+                              padding: '7px 14px', fontSize: '13px',
+                              color: colors.primaryText, backgroundColor: 'transparent',
+                              border: `1px solid ${colors.border}`, borderRadius: '6px', cursor: 'pointer',
+                            }}
+                          >
+                            취소
+                          </button>
+                        </div>
                       </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleDeleteCategory(category.id, category.name)}
-                      disabled={deletingCategoryId === category.id}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '13px',
-                        color: '#dc2626',
-                        backgroundColor: '#fef2f2',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px',
-                        cursor: deletingCategoryId === category.id ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        opacity: deletingCategoryId === category.id ? 0.5 : 1,
-                      }}
-                    >
-                      <Trash2 size={14} />
-                      {deletingCategoryId === category.id ? '삭제 중...' : '삭제'}
-                    </button>
+                    ) : (
+                      /* 뷰 모드 */
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '12px', color: colors.secondaryText, marginBottom: '2px' }}>
+                            {category.code ?? category.name}
+                          </div>
+                          <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '4px' }}>
+                            {category.name}
+                          </div>
+                          {category.description && (
+                            <div style={{ fontSize: '13px', color: colors.secondaryText }}>
+                              {category.description}
+                            </div>
+                          )}
+                          <div style={{ fontSize: '12px', color: colors.secondaryText, marginTop: '8px' }}>
+                            생성일: {new Date(category.createdAt).toLocaleDateString('ko-KR')}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                          <button
+                            onClick={() => handleStartEditCategory(category)}
+                            style={{
+                              padding: '8px 12px', fontSize: '13px',
+                              color: '#374151', backgroundColor: '#f3f4f6',
+                              border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer',
+                            }}
+                          >
+                            수정
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCategory(category.id, category.name)}
+                            disabled={deletingCategoryId === category.id}
+                            style={{
+                              padding: '8px 12px', fontSize: '13px',
+                              color: '#dc2626', backgroundColor: '#fef2f2',
+                              border: '1px solid #fecaca', borderRadius: '6px',
+                              cursor: deletingCategoryId === category.id ? 'not-allowed' : 'pointer',
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              opacity: deletingCategoryId === category.id ? 0.5 : 1,
+                            }}
+                          >
+                            <Trash2 size={14} />
+                            {deletingCategoryId === category.id ? '삭제 중...' : '삭제'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

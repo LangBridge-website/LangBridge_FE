@@ -436,6 +436,20 @@ export default function TranslationsPending() {
 
   const handleStartTranslation = async (doc: DocumentListItem) => {
     if (startTranslationLoading) return;
+
+    // 이미 내가 이 문서의 복사본을 가지고 있는지 확인
+    try {
+      const myCopy = await documentApi.getMyCopyBySourceId(doc.id);
+      if (myCopy) {
+        const proceed = window.confirm(
+          '이미 이 문서의 번역을 진행 중입니다. 이어하기를 사용해주세요. 그래도 새로 번역을 시작하시겠습니까?'
+        );
+        if (!proceed) return;
+      }
+    } catch (err) {
+      console.warn('내 복사본 조회 실패 (번역 시작 계속 진행):', err);
+    }
+
     setStartTranslationLoading(true);
     try {
       const res = await translationWorkApi.startTranslation(doc.id);
@@ -530,7 +544,7 @@ export default function TranslationsPending() {
     },
   };
 
-  const truncateUrl = (url: string, maxLen: number = 42) => {
+  const truncateUrl = (url: string, maxLen: number = 24) => {
     if (!url || !url.trim()) return '';
     const u = url.trim();
     return u.length <= maxLen ? u : u.slice(0, maxLen) + '…';
@@ -554,7 +568,7 @@ export default function TranslationsPending() {
     {
       key: 'title',
       label: '문서 제목',
-      width: 'minmax(0, 2fr)',
+      width: 'minmax(0, 3fr)',
       render: (item) => {
         const isFavorite = favoriteStatus.get(item.id) || false;
         return (
@@ -592,9 +606,12 @@ export default function TranslationsPending() {
               style={{
                 fontWeight: item.isCopyRow ? 400 : 500,
                 color: '#000000',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                minWidth: 0,
+                whiteSpace: 'normal',
+                overflow: 'visible',
+                display: 'block',
+                lineHeight: 1.2,
+                wordBreak: 'break-word',
               }}
               title={item.title}
             >
@@ -610,7 +627,7 @@ export default function TranslationsPending() {
     {
       key: 'originalUrl',
       label: '원문 URL',
-      width: 'minmax(0, 1.5fr)',
+      width: 'minmax(0, 1fr)',
       render: (item) => {
         if ((item as RowItem).isLoadingRow) return <span style={{ color: colors.secondaryText, fontSize: '12px' }}>-</span>;
         const url = item.originalUrl?.trim();
@@ -632,7 +649,7 @@ export default function TranslationsPending() {
               whiteSpace: 'nowrap',
             }}
           >
-            {truncateUrl(url, 32)}
+            {truncateUrl(url, 24)}
           </a>
         );
       },

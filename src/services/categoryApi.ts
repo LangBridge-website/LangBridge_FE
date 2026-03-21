@@ -2,6 +2,7 @@ import apiClient from './api';
 
 export interface CategoryResponse {
   id: number;
+  code: string;
   name: string;
   description?: string;
   createdAt: string;
@@ -9,11 +10,13 @@ export interface CategoryResponse {
 }
 
 export interface CreateCategoryRequest {
+  code: string;
   name: string;
   description?: string;
 }
 
 export interface UpdateCategoryRequest {
+  code?: string;
   name?: string;
   description?: string;
 }

@@ -8,6 +8,7 @@ import { DocumentState } from '../types/translation';
 import { colors } from '../constants/designTokens';
 import { Button } from '../components/Button';
 import { documentApi, DocumentResponse } from '../services/documentApi';
+import { categoryApi, CategoryResponse } from '../services/categoryApi';
 import { useUser } from '../contexts/UserContext';
 import { UserRole } from '../types/user';
 import { Modal } from '../components/Modal';
@@ -31,7 +32,7 @@ const statuses = [
 ];
 
 // DocumentResponse를 DocumentListItem으로 변환
-const convertToDocumentListItem = (doc: DocumentResponse): DocumentListItem => {
+const convertToDocumentListItem = (doc: DocumentResponse, categoryMap?: Map<number, string>): DocumentListItem => {
   // 진행률 계산 (임시로 0%, 나중에 버전 정보에서 계산)
   const progress = 0;
   
@@ -44,8 +45,10 @@ const convertToDocumentListItem = (doc: DocumentResponse): DocumentListItem => {
   // 우선순위 (임시로 기본값, 나중에 priority 필드 추가 필요)
   const priority = Priority.MEDIUM;
   
-  // 카테고리 이름 (임시로 ID 사용, 나중에 카테고리 API로 이름 가져오기)
-  const category = doc.categoryId ? `카테고리 ${doc.categoryId}` : '미분류';
+  // 카테고리 이름 (카테고리 맵에서 조회, 없으면 미분류)
+  const category = doc.categoryId
+    ? (categoryMap?.get(doc.categoryId) ?? '미분류')
+    : '미분류';
 
   const item: DocumentListItem = {
     id: doc.id,
@@ -58,10 +61,11 @@ const convertToDocumentListItem = (doc: DocumentResponse): DocumentListItem => {
     priority,
     status: doc.status as DocumentState,
     lastModified: doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined,
-    assignedManager: doc.lastModifiedBy?.name,
+    assignedManager: doc.createdBy?.name,
     isFinal: doc.currentVersionIsFinal === true,
     originalUrl: doc.originalUrl,
     hasVersions: doc.hasVersions === true,
+    sourceDocumentId: doc.sourceDocumentId ?? null,
   };
   if (doc.createdBy?.name) item.currentWorker = doc.createdBy.name;
   if (doc.currentVersionId != null) item.currentVersionId = doc.currentVersionId;
@@ -109,6 +113,11 @@ export default function Documents() {
     field: 'lastModified',
     order: 'desc',
   });
+  const [categoryMap, setCategoryMap] = useState<Map<number, string>>(new Map());
+  const [categoryList, setCategoryList] = useState<{ id: number; name: string }[]>([]);
+  const [editTitle, setEditTitle] = useState<string>('');
+  const [editCategoryId, setEditCategoryId] = useState<number | undefined>(undefined);
+  const [isEditSaving, setIsEditSaving] = useState(false);
   const [favoriteStatus, setFavoriteStatus] = useState<Map<number, boolean>>(new Map());
   const [lockStatuses, setLockStatuses] = useState<Map<number, { locked: boolean; lockedBy?: string; lockedAt?: string }>>(new Map());
   const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
@@ -120,6 +129,22 @@ export default function Documents() {
   const isAdmin = user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.ADMIN;
 
   type RowItem = DocumentListItem & { isCopyRow?: boolean; sourceDocumentId?: number; isLoadingRow?: boolean; rowNumber?: number; hasHandoverRequest?: boolean };
+
+  // 카테고리 목록 로드
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const cats = await categoryApi.getAllCategories();
+        const map = new Map<number, string>();
+        cats.forEach((cat: CategoryResponse) => map.set(cat.id, cat.name));
+        setCategoryMap(map);
+        setCategoryList(cats.map((cat: CategoryResponse) => ({ id: cat.id, name: cat.name })));
+      } catch (error) {
+        console.error('카테고리 목록 조회 실패:', error);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   // API에서 문서 목록 가져오기
   useEffect(() => {
@@ -142,7 +167,7 @@ export default function Documents() {
         if (selectedCategory !== '전체') params.categoryId = 1;
 
         const response = await documentApi.getAllDocuments(params);
-        const converted = response.map(convertToDocumentListItem);
+        const converted = response.map((doc) => convertToDocumentListItem(doc, categoryMap));
         const draftOnlyCount = converted.filter(doc => 
           doc.status === DocumentState.DRAFT && (doc.hasVersions === false || doc.hasVersions === undefined)
         ).length;
@@ -163,7 +188,7 @@ export default function Documents() {
     };
 
     fetchDocuments();
-  }, [searchTerm, selectedStatus, selectedCategory]);
+  }, [searchTerm, selectedStatus, selectedCategory, categoryMap]);
 
   // 찜 상태 로드 (락 제거됨)
   useEffect(() => {
@@ -241,7 +266,7 @@ export default function Documents() {
       filtered = filtered.filter((doc) => doc.priority === priorityMap[selectedPriority]);
     }
 
-    // 작성자 필터 (createdBy 정보가 필요하므로 임시로 담당자로 대체)
+    // 작성자 필터 (담당 관리자와 동일: 생성자 기준)
     if (selectedAuthor !== '전체') {
       filtered = filtered.filter((doc) => doc.assignedManager === selectedAuthor);
     }
@@ -287,7 +312,7 @@ export default function Documents() {
   const tableData: RowItem[] = useMemo(() => {
     const rows: RowItem[] = [];
     for (const item of filteredAndSortedDocuments) {
-      rows.push({ ...item, isCopyRow: false });
+      rows.push({ ...(item as RowItem), isCopyRow: false });
       if (expandedSourceIds.has(item.id)) {
         const copies = copiesBySourceId.get(item.id);
         const isLoading = loadingCopySourceIds.has(item.id);
@@ -337,7 +362,7 @@ export default function Documents() {
       try {
         const copies = await documentApi.getCopiesBySourceId(sourceId);
         const withMeta = copies.map((doc) => {
-          const listItem = convertToDocumentListItem(doc);
+          const listItem = convertToDocumentListItem(doc, categoryMap);
           if (doc.createdBy?.name) listItem.currentWorker = doc.createdBy.name;
           (listItem as RowItem).hasHandoverRequest = !!doc.latestHandover;
           if (doc.currentVersionId != null) listItem.currentVersionId = doc.currentVersionId;
@@ -365,10 +390,12 @@ export default function Documents() {
         });
       }
     }
-  }, [expandedSourceIds, copiesBySourceId]);
+  }, [expandedSourceIds, copiesBySourceId, categoryMap]);
 
   const handleManage = (doc: DocumentListItem) => {
     setSelectedDocument(doc);
+    setEditTitle(doc.title);
+    setEditCategoryId(doc.categoryId);
     setManageModalOpen(true);
   };
 
@@ -379,6 +406,40 @@ export default function Documents() {
   const handleManageDelete = () => {
     setManageModalOpen(false);
     setDeleteModalOpen(true);
+  };
+
+  const handleManageSave = async () => {
+    if (!selectedDocument) return;
+    if (!editTitle.trim()) {
+      alert('문서 제목을 입력해주세요.');
+      return;
+    }
+    try {
+      setIsEditSaving(true);
+      await documentApi.updateDocument(selectedDocument.id, {
+        title: editTitle.trim(),
+        categoryId: editCategoryId,
+      });
+      setDocuments(prev =>
+        prev.map(doc =>
+          doc.id === selectedDocument.id
+            ? {
+                ...doc,
+                title: editTitle.trim(),
+                categoryId: editCategoryId,
+                category: editCategoryId ? (categoryMap.get(editCategoryId) ?? '미분류') : '미분류',
+              }
+            : doc
+        )
+      );
+      setManageModalOpen(false);
+      setSelectedDocument(null);
+    } catch (error: any) {
+      console.error('문서 수정 실패:', error);
+      alert(error?.response?.data?.message || '문서 수정에 실패했습니다.');
+    } finally {
+      setIsEditSaving(false);
+    }
   };
 
   const handleToggleFavorite = async (doc: DocumentListItem, e: React.MouseEvent) => {
@@ -507,7 +568,7 @@ export default function Documents() {
     }
   };
 
-  const truncateUrl = (url: string, maxLen: number = 32) => {
+  const truncateUrl = (url: string, maxLen: number = 24) => {
     if (!url || !url.trim()) return '';
     const u = url.trim();
     return u.length <= maxLen ? u : u.slice(0, maxLen) + '…';
@@ -557,7 +618,7 @@ export default function Documents() {
     {
       key: 'title',
       label: '문서 제목',
-      width: 'minmax(0, 2fr)',
+      width: 'minmax(0, 3fr)',
       render: (item) => {
         if ((item as RowItem).isLoadingRow) {
           return <span style={{ paddingLeft: 24, color: colors.secondaryText, fontSize: '12px' }}>{item.title}</span>;
@@ -614,9 +675,12 @@ export default function Documents() {
                 color: isDraftOnly && !item.isCopyRow ? '#999' : '#000000',
                 fontStyle: isDraftOnly && !item.isCopyRow ? 'italic' : 'normal',
                 minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                flex: '1 1 auto',
+                whiteSpace: 'normal',
+                overflow: 'visible',
+                display: 'block',
+                lineHeight: 1.2,
+                wordBreak: 'break-word',
               }}
               title={item.title}
             >
@@ -632,7 +696,7 @@ export default function Documents() {
     {
       key: 'originalUrl',
       label: '원문 URL',
-      width: 'minmax(0, 1.5fr)',
+      width: 'minmax(0, 1fr)',
       render: (item) => {
         if ((item as RowItem).isLoadingRow) return <span style={{ color: colors.secondaryText, fontSize: '12px' }}>-</span>;
         const url = item.originalUrl?.trim();
@@ -654,7 +718,7 @@ export default function Documents() {
               whiteSpace: 'nowrap',
             }}
           >
-            {truncateUrl(url, 32)}
+            {truncateUrl(url, 24)}
           </a>
         );
       },
@@ -1134,11 +1198,25 @@ export default function Documents() {
           cancelText="취소"
           variant="danger"
         >
-          <p>
-            정말로 "{selectedDocument?.title}" 문서를 삭제하시겠습니까?
-            <br />
-            이 작업은 되돌릴 수 없습니다.
-          </p>
+          {selectedDocument && (
+            <div style={{ fontSize: '13px', color: colors.primaryText, lineHeight: 1.6 }}>
+              <p style={{ marginBottom: '8px' }}>
+                정말로 "<strong>{selectedDocument.title}</strong>" 문서를 삭제하시겠습니까?
+              </p>
+              {selectedDocument.sourceDocumentId == null ? (
+                <p style={{ marginBottom: '8px', color: '#b91c1c' }}>
+                  이 문서는 <strong>원문</strong>입니다. 이 문서를 삭제하면
+                  <br />
+                  이 원문을 기반으로 생성된 <strong>모든 복사본(다른 사람이 작업 중인 문서 포함)</strong>이 함께 삭제됩니다.
+                </p>
+              ) : (
+                <p style={{ marginBottom: '8px', color: colors.secondaryText }}>
+                  이 문서는 <strong>복사본</strong>입니다. 이 문서만 삭제되며, 원문과 다른 복사본에는 영향이 없습니다.
+                </p>
+              )}
+              <p style={{ marginTop: '4px' }}>이 작업은 되돌릴 수 없습니다.</p>
+            </div>
+          )}
         </Modal>
 
         {/* 문서 관리 모달 */}
@@ -1176,13 +1254,56 @@ export default function Documents() {
                 문서 관리
               </h2>
               <div style={{ marginBottom: '20px', color: colors.primaryText, fontSize: '14px' }}>
-                <p style={{ marginBottom: '8px' }}><strong>제목:</strong> {selectedDocument.title}</p>
-                <p style={{ marginBottom: '8px' }}><strong>상태:</strong> {
+                {/* 제목 편집 */}
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: colors.primaryText }}>
+                    제목
+                  </label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      color: '#000',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                {/* 카테고리 편집 */}
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: colors.primaryText }}>
+                    카테고리
+                  </label>
+                  <select
+                    value={editCategoryId ?? ''}
+                    onChange={(e) => setEditCategoryId(e.target.value ? Number(e.target.value) : undefined)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      color: '#000',
+                      backgroundColor: '#fff',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="">미분류</option>
+                    {categoryList.map((cat) => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <p style={{ marginBottom: '8px', fontSize: '13px' }}><strong>상태:</strong> {
                   { DRAFT: '초안', PENDING_TRANSLATION: '번역 대기', IN_TRANSLATION: '번역 중',
                     PENDING_REVIEW: '검토 대기', APPROVED: '번역 완료', PUBLISHED: '공개됨' }[selectedDocument.status] || selectedDocument.status
                 }</p>
-                <p style={{ marginBottom: '8px' }}><strong>카테고리:</strong> {selectedDocument.category}</p>
-                <p style={{ marginBottom: '12px' }}><strong>최근 수정:</strong> {selectedDocument.lastModified || '-'}</p>
+                <p style={{ marginBottom: '12px', fontSize: '13px' }}><strong>최근 수정:</strong> {selectedDocument.lastModified || '-'}</p>
                 {(() => {
                   const lockStatus = lockStatuses.get(selectedDocument.id);
                   const isOld = lockStatus?.locked ? isLockOld(lockStatus.lockedAt) : false;
@@ -1205,17 +1326,22 @@ export default function Documents() {
                 <Button variant="secondary" onClick={() => { setManageModalOpen(false); setSelectedDocument(null); }}>
                   닫기
                 </Button>
+                <Button
+                  variant={isEditSaving ? 'disabled' : 'primary'}
+                  onClick={handleManageSave}
+                  style={{ fontSize: '13px', padding: '8px 16px' }}
+                >
+                  {isEditSaving ? '저장 중...' : '저장'}
+                </Button>
                 {isAdmin && (
-                    <>
-                      <Button
-                        variant="danger"
-                        onClick={handleManageDelete}
-                        style={{ fontSize: '13px', padding: '8px 16px' }}
-                      >
-                        삭제
-                      </Button>
-                    </>
-                  )}
+                  <Button
+                    variant="danger"
+                    onClick={handleManageDelete}
+                    style={{ fontSize: '13px', padding: '8px 16px' }}
+                  >
+                    삭제
+                  </Button>
+                )}
               </div>
             </div>
           </div>
