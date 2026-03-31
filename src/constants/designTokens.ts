@@ -14,6 +14,14 @@ export const colors = {
   accent: '#A9A9A9', // Active / Focus only (darkgray)
 } as const;
 
+/** OS 다크 모드에서도 input/textarea가 밝은 배경을 쓰도록 (:root color-scheme 대응) */
+export const formFieldLightStyle = {
+  borderColor: colors.border,
+  backgroundColor: colors.surface,
+  color: colors.primaryText,
+  colorScheme: 'light' as const,
+};
+
 export const typography = {
   fontFamily: 'system-ui, Pretendard, sans-serif',
   fontSize: {

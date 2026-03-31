@@ -66,6 +66,13 @@ export const sidebarMenu: MenuItem[] = [
     icon: 'CheckCircle',
   },
   {
+    key: 'inquiry',
+    label: '문의 게시판',
+    path: '/inquiries',
+    roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VOLUNTEER],
+    icon: 'MessageCircle',
+  },
+  {
     key: 'glossary',
     label: '용어집',
     path: '/glossary',
