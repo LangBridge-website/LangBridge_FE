@@ -314,6 +314,18 @@ export const documentApi = {
   },
 
   /**
+   * 문서 id 목록 중 찜한 문서 id만 일괄 조회 (목록 N+1 방지)
+   */
+  getFavoriteBulkStatus: async (documentIds: number[]): Promise<number[]> => {
+    if (documentIds.length === 0) return [];
+    const response = await apiClient.post<{ favoriteDocumentIds: number[] }>(
+      "/documents/favorites/bulk-status",
+      { documentIds },
+    );
+    return response.data.favoriteDocumentIds ?? [];
+  },
+
+  /**
    * 문서 삭제
    */
   deleteDocument: async (id: number): Promise<{ success: boolean; message: string }> => {

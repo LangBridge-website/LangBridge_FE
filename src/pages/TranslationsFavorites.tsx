@@ -92,6 +92,22 @@ function compareDocumentsForSort(
 	return compareByCreatedAtThenId(a, b);
 }
 
+function getSourceLabel(originalUrl?: string): string | null {
+	if (!originalUrl) return null;
+	try {
+		const host = new URL(originalUrl).hostname
+			.toLowerCase()
+			.replace(/^www\./, "");
+		if (host === "crev.info") return "CREV";
+		if (host === "icr.org") return "ICR";
+		if (host === "creation.com") return "CREATION";
+		if (host === "ancientpatriarchs.wordpress.com") return "ANCIENTPATRIARCHS";
+		return "기타";
+	} catch {
+		return "기타";
+	}
+}
+
 const convertToDocumentListItem = (
   doc: DocumentResponse,
 	categoryMap?: Map<number, string>,
@@ -205,6 +221,8 @@ export default function TranslationsFavorites() {
 		useState<string>("전체");
 	const [selectedCategoryMinor, setSelectedCategoryMinor] =
 		useState<string>("전체");
+	const [selectedSourceLabel, setSelectedSourceLabel] =
+		useState<string>("전체");
 	const [selectedStatuses, setSelectedStatuses] = useState<DocumentState[]>([]);
   const [sortOption, setSortOption] = useState<DocumentSortOption>({
 		field: "createdAt",
@@ -213,7 +231,7 @@ export default function TranslationsFavorites() {
 	const [categoryMap, setCategoryMap] = useState<Map<number, string>>(
 		new Map(),
 	);
-	const [inTranslationCountBySourceId, setInTranslationCountBySourceId] =
+	const [generatedCopyCountBySourceId, setGeneratedCopyCountBySourceId] =
 		useState<Map<number, number>>(() => new Map());
 	const [startTranslationLoading, setStartTranslationLoading] = useState(false);
 	const [continueTranslationLoading, setContinueTranslationLoading] =
@@ -386,16 +404,32 @@ export default function TranslationsFavorites() {
 		[categoryMap, selectedCategoryMajor],
 	);
 
+	const sourceLabelOptions = useMemo(() => {
+		const set = new Set<string>();
+		for (const doc of sourceDocuments) {
+			const label = getSourceLabel(doc.originalUrl);
+			if (label) set.add(label);
+		}
+		const ordered = ["CREV", "ICR", "CREATION", "ANCIENTPATRIARCHS", "기타"];
+		return ordered.filter((v) => set.has(v));
+	}, [sourceDocuments]);
+
 	const documentMatchesCategoryFilter = useCallback(
 		(doc: DocumentListItem) => {
-			if (selectedCategoryMajor === "전체") return true;
-			const p = splitCategoryName(doc.category);
-			if (!p) return false;
-			if (p.major !== selectedCategoryMajor) return false;
-			if (selectedCategoryMinor === "전체") return true;
-			return p.minor === selectedCategoryMinor;
+			let categoryMatch = true;
+			if (selectedCategoryMajor !== "전체") {
+				const p = splitCategoryName(doc.category);
+				if (!p) categoryMatch = false;
+				else if (p.major !== selectedCategoryMajor) categoryMatch = false;
+				else if (selectedCategoryMinor !== "전체")
+					categoryMatch = p.minor === selectedCategoryMinor;
+			}
+			if (!categoryMatch) return false;
+			if (selectedSourceLabel === "전체") return true;
+			const label = getSourceLabel(doc.originalUrl) ?? "기타";
+			return label === selectedSourceLabel;
 		},
-		[selectedCategoryMajor, selectedCategoryMinor],
+		[selectedCategoryMajor, selectedCategoryMinor, selectedSourceLabel],
 	);
 
 	const documentIdsInCategory = useMemo(() => {
@@ -418,16 +452,22 @@ export default function TranslationsFavorites() {
 		let cancelled = false;
 		(async () => {
 			try {
-				const raw = await documentApi.getInTranslationCopyCounts(ids);
+				const pairs = await Promise.all(
+					ids.map(async (id) => {
+						try {
+							const copies = await documentApi.getCopiesBySourceId(id);
+							return [id, copies.length] as const;
+						} catch {
+							return [id, 0] as const;
+						}
+					}),
+				);
 				if (cancelled) return;
 				const next = new Map<number, number>();
-				for (const id of ids) {
-					const v = raw[String(id)] ?? (raw as Record<number, number>)[id];
-					next.set(id, typeof v === "number" && !Number.isNaN(v) ? v : 0);
-				}
-				setInTranslationCountBySourceId(next);
+				for (const [id, count] of pairs) next.set(id, count);
+				setGeneratedCopyCountBySourceId(next);
 			} catch {
-				if (!cancelled) setInTranslationCountBySourceId(new Map());
+				if (!cancelled) setGeneratedCopyCountBySourceId(new Map());
 			}
 		})();
 		return () => {
@@ -437,9 +477,24 @@ export default function TranslationsFavorites() {
 
 	const categoryFilteredSortedSources = useMemo(() => {
 		const filtered = [...sourceDocuments].filter(documentMatchesCategoryFilter);
-		filtered.sort((a, b) => compareDocumentsForSort(a, b, sortOption));
+		if (sortOption.field === "generatedCopyCount") {
+			filtered.sort((a, b) => {
+				const av = generatedCopyCountBySourceId.get(a.id) ?? 0;
+				const bv = generatedCopyCountBySourceId.get(b.id) ?? 0;
+				const primary = sortOption.order === "asc" ? av - bv : bv - av;
+				if (primary !== 0) return primary;
+				return compareByCreatedAtThenId(a, b);
+			});
+		} else {
+			filtered.sort((a, b) => compareDocumentsForSort(a, b, sortOption));
+		}
 		return filtered;
-	}, [sourceDocuments, documentMatchesCategoryFilter, sortOption]);
+	}, [
+		sourceDocuments,
+		documentMatchesCategoryFilter,
+		sortOption,
+		generatedCopyCountBySourceId,
+	]);
 
 	const createdAtRankBySourceId = useMemo(() => {
 		const filtered = [...sourceDocuments].filter(documentMatchesCategoryFilter);
@@ -568,9 +623,12 @@ export default function TranslationsFavorites() {
 								rowNumber: 1,
 							} as RowItem);
 						} else {
-							const sortedCopies = [...copiesFiltered].sort((a, b) =>
-								compareDocumentsForSort(a, b, sortOption),
-							);
+							const sortedCopies = [...copiesFiltered].sort((a, b) => {
+								if (sortOption.field === "generatedCopyCount") {
+									return compareByCreatedAtThenId(a, b);
+								}
+								return compareDocumentsForSort(a, b, sortOption);
+							});
 							sortedCopies.forEach((copy, idx) => {
 								rows.push({
 									...copy,
@@ -869,7 +927,8 @@ export default function TranslationsFavorites() {
 
 	const numberColumn: TableColumn<RowItem> = {
 		key: "rowNumber",
-		label: "인원",
+		label: "생성 문서",
+		sortKey: "generatedCopyCount",
 		width: "minmax(2.5rem, max-content)",
 		align: "center",
 		render: (item) => {
@@ -886,8 +945,8 @@ export default function TranslationsFavorites() {
 					<span style={{ fontSize: "12px", color: colors.secondaryText }} />
 				);
 			}
-			const working = inTranslationCountBySourceId.get(item.id);
-			if (working === undefined) {
+			const generated = generatedCopyCountBySourceId.get(item.id);
+			if (generated === undefined) {
 				return (
 					<span style={{ fontSize: "12px", color: colors.secondaryText }}>
 						…
@@ -901,9 +960,9 @@ export default function TranslationsFavorites() {
 						color: colors.primaryText,
 						fontWeight: 600,
 					}}
-					title="번역 중(IN_TRANSLATION)인 복사본 수"
+					title="해당 원문에서 생성된 복사본 문서 수"
 				>
-					{working}
+					{generated}
 				</span>
 			);
 		},
@@ -920,6 +979,8 @@ export default function TranslationsFavorites() {
 			width: "minmax(2.5rem, 1fr)",
       render: (item) => {
 				const isFavorite = favoritedDocumentIds.has(item.id);
+				const row = item as RowItem;
+				const sourceLabel = getSourceLabel(item.originalUrl);
         return (
 					<div
 						style={{
@@ -984,6 +1045,26 @@ export default function TranslationsFavorites() {
 						>
 							{item.title}
 						</span>
+						{!row.isLoadingRow && sourceLabel && (
+							<span
+								style={{
+									display: "inline-block",
+									padding: "2px 5px",
+									borderRadius: "4px",
+									fontSize: "10px",
+									fontWeight: 600,
+									backgroundColor:
+										sourceLabel === "기타" ? "#F3F4F6" : "#E6F0FF",
+									color: sourceLabel === "기타" ? "#6B7280" : "#1D4ED8",
+									flexShrink: 0,
+									lineHeight: 1.2,
+									alignSelf: "flex-start",
+								}}
+								title={item.originalUrl || "원문 URL 없음"}
+							>
+								{sourceLabel}
+							</span>
+						)}
 						{item.isCopyRow && !(item as RowItem).isLoadingRow && (
 							<span
 								style={{
@@ -1521,6 +1602,49 @@ export default function TranslationsFavorites() {
 											);
 										})}
 									</div>
+								</div>
+								<div
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: "6px",
+										flexShrink: 0,
+									}}
+								>
+									<span
+										style={{
+											fontSize: "11px",
+											fontWeight: 600,
+											color: colors.secondaryText,
+											whiteSpace: "nowrap",
+										}}
+									>
+										사이트
+									</span>
+									<select
+										value={selectedSourceLabel}
+										onChange={(e) => setSelectedSourceLabel(e.target.value)}
+										aria-label="사이트 필터"
+										style={{
+											height: "26px",
+											padding: "0 6px",
+											borderRadius: "6px",
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.surface,
+											color: colors.primaryText,
+											fontSize: "12px",
+											fontWeight: 500,
+											minWidth: "88px",
+											outline: "none",
+										}}
+									>
+										<option value="전체">전체</option>
+										{sourceLabelOptions.map((label) => (
+											<option key={label} value={label}>
+												{label}
+											</option>
+										))}
+									</select>
 								</div>
         </div>
 

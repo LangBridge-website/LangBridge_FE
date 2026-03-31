@@ -1,4 +1,4 @@
-import { DocumentState } from './translation';
+import type { DocumentState } from './translation';
 
 export enum Priority {
   HIGH = 'HIGH',
@@ -44,7 +44,7 @@ export interface DocumentFilter {
 }
 
 export interface DocumentSortOption {
-  field: 'deadline' | 'progress' | 'lastModified' | 'title' | 'estimatedLength' | 'createdAt';
+  field: 'deadline' | 'progress' | 'lastModified' | 'title' | 'estimatedLength' | 'createdAt' | 'generatedCopyCount';
   order: 'asc' | 'desc';
 }
 
