@@ -10,6 +10,7 @@ import {
   Activity,
   Settings,
   Users,
+  MessageCircle,
   ChevronDown,
   ChevronUp,
   Menu,
@@ -20,6 +21,7 @@ import { sidebarMenu, MenuItem, SubMenuItem } from '../constants/sidebarMenu';
 import { useUser } from '../contexts/UserContext';
 import { useSidebar } from '../contexts/SidebarContext';
 import { usePermission } from '../hooks/usePermission';
+import { useInquiryBadge } from '../hooks/useInquiryBadge';
 import { roleLevelToRole } from '../utils/hasAccess';
 import {
   colors,
@@ -41,12 +43,13 @@ const iconMap: Record<string, React.ComponentType<{ className?: string; size?: n
   Activity,
   Settings,
   Users,
+  MessageCircle,
 };
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useUser();
+  const { user, logout, loading: userLoading } = useUser();
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
@@ -79,11 +82,17 @@ export const Sidebar: React.FC = () => {
     return getFilteredMenu(sidebarMenu);
   }, [getFilteredMenu, userRole]);
 
+  const { displayCount: inquiryBadgeCount, badgeTooltip: inquiryBadgeTooltip } = useInquiryBadge(
+    userRole,
+    user?.id ?? null,
+    userLoading
+  );
+
   // 현재 경로에 따라 자동으로 메뉴 확장
   useEffect(() => {
     setExpandedMenus((prev) => {
       const next = new Set(prev);
-      filteredMenu.forEach((item) => {
+      for (const item of filteredMenu) {
         if (item.children) {
           const hasActiveChild = item.children.some((child) => isActive(child.path));
           // 번역 작업 상세(/translations/:id/work)에 있을 때도 '번역 작업' 메뉴 확장 유지
@@ -92,7 +101,7 @@ export const Sidebar: React.FC = () => {
             next.add(item.key);
           }
         }
-      });
+      }
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,7 +166,7 @@ export const Sidebar: React.FC = () => {
 
   // 메뉴 그룹 분류
   const mainMenuItems = filteredMenu.filter(
-    (item) => ['dashboard', 'translation_work', 'document_management', 'new_translation', 'review_approval', 'glossary'].includes(item.key)
+    (item) => ['dashboard', 'translation_work', 'document_management', 'new_translation', 'review_approval', 'inquiry', 'glossary'].includes(item.key)
   );
   const bottomMenuItems = filteredMenu.filter(
     (item) => ['activity', 'settings'].includes(item.key)
@@ -203,7 +212,19 @@ export const Sidebar: React.FC = () => {
             }}
             aria-label={item.label}
           >
-            {renderIcon(item.icon, isActiveState)}
+            <span className="relative inline-flex">
+              {renderIcon(item.icon, isActiveState)}
+              {item.key === 'inquiry' && inquiryBadgeCount > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-0.5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                  style={{ backgroundColor: '#dc2626', lineHeight: 1 }}
+                  title={inquiryBadgeTooltip}
+                  aria-hidden
+                >
+                  {inquiryBadgeCount > 99 ? '99+' : inquiryBadgeCount}
+                </span>
+              )}
+            </span>
           </button>
 
           {/* Tooltip */}
@@ -288,19 +309,28 @@ export const Sidebar: React.FC = () => {
           aria-label={item.label}
           aria-expanded={hasChildren ? isExpanded : undefined}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             {renderIcon(item.icon, isActiveState)}
-            <span>{item.label}</span>
+            <span className="truncate">{item.label}</span>
           </div>
-          {hasChildren && (
-            <div className="flex-shrink-0" style={{ color: '#000000' }}>
-              {isExpanded ? (
+          <div className="flex items-center gap-1 flex-shrink-0" style={{ color: '#000000' }}>
+            {item.key === 'inquiry' && inquiryBadgeCount > 0 && (
+              <span
+                className="min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
+                style={{ backgroundColor: '#dc2626' }}
+                title={inquiryBadgeTooltip}
+                aria-hidden
+              >
+                {inquiryBadgeCount > 99 ? '99+' : inquiryBadgeCount}
+              </span>
+            )}
+            {hasChildren &&
+              (isExpanded ? (
                 <ChevronUp size={16} strokeWidth={1.75} />
               ) : (
                 <ChevronDown size={16} strokeWidth={1.75} />
-              )}
-            </div>
-          )}
+              ))}
+          </div>
         </button>
 
         {/* Submenu */}

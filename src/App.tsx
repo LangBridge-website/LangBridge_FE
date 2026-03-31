@@ -23,6 +23,9 @@ import SystemSettings from './pages/SystemSettings';
 import Glossary from './pages/Glossary';
 import UserManagement from './pages/UserManagement';
 import TranslationsHandover from './pages/TranslationsHandover';
+import InquiryList from './pages/InquiryList';
+import InquiryDetail from './pages/InquiryDetail';
+import InquiryForm from './pages/InquiryForm';
 const Activity = () => <div className="p-8"><h1 className="text-2xl font-bold">내 활동</h1></div>;
 
 function App() {
@@ -116,6 +119,26 @@ function App() {
                         <Route path="/reviews/:id/review" element={
                           <ErrorBoundary>
                             <DocumentReview />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/inquiries" element={
+                          <ErrorBoundary>
+                            <InquiryList />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/inquiries/new" element={
+                          <ErrorBoundary>
+                            <InquiryForm />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/inquiries/:id/edit" element={
+                          <ErrorBoundary>
+                            <InquiryForm />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/inquiries/:id" element={
+                          <ErrorBoundary>
+                            <InquiryDetail />
                           </ErrorBoundary>
                         } />
                         <Route path="/glossary" element={

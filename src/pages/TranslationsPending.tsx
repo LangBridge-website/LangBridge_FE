@@ -162,6 +162,22 @@ function calculateProgress(
 	return Math.round((completedParagraphs.length / totalParagraphs) * 100);
 }
 
+function getSourceLabel(originalUrl?: string): string | null {
+	if (!originalUrl) return null;
+	try {
+		const host = new URL(originalUrl).hostname
+			.toLowerCase()
+			.replace(/^www\./, "");
+		if (host === "crev.info") return "CREV";
+		if (host === "icr.org") return "ICR";
+		if (host === "creation.com") return "CREATION";
+		if (host === "ancientpatriarchs.wordpress.com") return "ANCIENTPATRIARCHS";
+		return "기타";
+	} catch {
+		return "기타";
+	}
+}
+
 // DocumentResponse를 DocumentListItem으로 변환
 const convertToDocumentListItem = (
 	doc: DocumentResponse & {
@@ -245,6 +261,8 @@ export default function TranslationsPending() {
 		useState<string>("전체");
 	const [selectedCategoryMinor, setSelectedCategoryMinor] =
 		useState<string>("전체");
+	const [selectedSourceLabel, setSelectedSourceLabel] =
+		useState<string>("전체");
 	/** 비어 있으면 전체(필터 없음). 여러 개 선택 시 OR 조건 */
 	const [selectedStatuses, setSelectedStatuses] = useState<DocumentState[]>([]);
 	const [sortOption, setSortOption] = useState<DocumentSortOption>({
@@ -263,8 +281,8 @@ export default function TranslationsPending() {
 	const [copiesBySourceId, setCopiesBySourceId] = useState<
 		Map<number, DocumentListItem[]>
 	>(new Map());
-	/** 배치 API로 받은 원문별 번역 중(IN_TRANSLATION) 복사본 수 — 인원 칸 전용 */
-	const [inTranslationCountBySourceId, setInTranslationCountBySourceId] =
+	/** 원문별 생성된 복사본 총 개수 — 생성 문서 수 칸/정렬 전용 */
+	const [generatedCopyCountBySourceId, setGeneratedCopyCountBySourceId] =
 		useState<Map<number, number>>(() => new Map());
 	/** 해당 원문의 복사본(수정 중인 사람들의 문서) 로딩 중인 원문 ID */
 	const [loadingCopySourceIds, setLoadingCopySourceIds] = useState<Set<number>>(
@@ -300,33 +318,51 @@ export default function TranslationsPending() {
 		loadCategories();
 	}, []);
 
-	// 찜 상태 로드
+	// 찜 상태 로드 (일괄 API 1회 — 문서마다 isFavorite 호출하지 않음)
 	useEffect(() => {
 		const loadFavoriteStatus = async () => {
+			if (documents.length === 0) {
+				setFavoriteStatus(new Map());
+				return;
+			}
 			try {
+				const ids = documents.map((d) => d.id);
+				const favoriteIds = await documentApi.getFavoriteBulkStatus(ids);
+				const favoriteSet = new Set(favoriteIds);
 				const favoriteMap = new Map<number, boolean>();
-				await Promise.all(
-					documents.map(async (doc) => {
-						try {
-							const isFavorite = await documentApi.isFavorite(doc.id);
-							favoriteMap.set(doc.id, isFavorite);
-						} catch (error) {
-							console.warn(
-								`문서 ${doc.id}의 찜 상태를 가져올 수 없습니다:`,
-								error,
-							);
-							favoriteMap.set(doc.id, false);
-						}
-					}),
-				);
+				for (const doc of documents) {
+					favoriteMap.set(doc.id, favoriteSet.has(doc.id));
+				}
 				setFavoriteStatus(favoriteMap);
 			} catch (error) {
-				console.error("찜 상태 로드 실패:", error);
+				console.warn(
+					"찜 일괄 조회 실패, 개별 조회로 대체:",
+					error,
+				);
+				try {
+					const favoriteMap = new Map<number, boolean>();
+					await Promise.all(
+						documents.map(async (doc) => {
+							try {
+								const isFavorite = await documentApi.isFavorite(doc.id);
+								favoriteMap.set(doc.id, isFavorite);
+							} catch {
+								favoriteMap.set(doc.id, false);
+							}
+						}),
+					);
+					setFavoriteStatus(favoriteMap);
+				} catch (e2) {
+					console.error("찜 상태 로드 실패:", e2);
+					const fallback = new Map<number, boolean>();
+					for (const doc of documents) {
+						fallback.set(doc.id, false);
+					}
+					setFavoriteStatus(fallback);
+				}
 			}
 		};
-		if (documents.length > 0) {
-			loadFavoriteStatus();
-		}
+		loadFavoriteStatus();
 	}, [documents]);
 
 	// API에서 문서 목록 가져오기
@@ -367,15 +403,25 @@ export default function TranslationsPending() {
 				);
 				console.log("📌 번역 관련 문서(원본만):", pendingDocs.length, "개");
 
-				// 각 문서에 ORIGINAL 버전 추가 (락 제거됨, completedParagraphs는 문서 응답에 포함)
+				// IN_TRANSLATION만 버전 API 호출(원문 HTML·진행률). 그 외는 목록 응답 필드만 사용.
 				const docsWithLockInfo = await Promise.all(
 					pendingDocs.map(async (doc) => {
 						let originalVersion = null;
-						let currentVersionNumber: number | null = null;
+						let currentVersionNumber: number | null =
+							doc.currentVersionNumber ?? null;
 						let userFacingVersionNumber: number | null | undefined =
 							doc.userFacingVersionNumber;
 
-						// 진행률 계산을 위해 ORIGINAL 버전 가져오기
+						if (doc.status !== "IN_TRANSLATION") {
+							return {
+								...doc,
+								lockInfo: null as LockStatusResponse | null,
+								originalVersion: null,
+								currentVersionNumber,
+								userFacingVersionNumber,
+							};
+						}
+
 						try {
 							const versions = await documentApi.getDocumentVersions(doc.id);
 							originalVersion =
@@ -391,18 +437,6 @@ export default function TranslationsPending() {
 											? 1
 											: currentVer.versionNumber;
 								}
-							}
-							if (originalVersion) {
-								console.log(`📄 문서 ${doc.id} ORIGINAL 버전:`, {
-									versionId: originalVersion.id,
-									hasContent: !!originalVersion.content,
-									contentLength: originalVersion.content?.length || 0,
-								});
-							} else {
-								console.warn(
-									`⚠️ 문서 ${doc.id}: ORIGINAL 버전을 찾을 수 없습니다. 버전 목록:`,
-									versions.map((v) => v.versionType),
-								);
 							}
 						} catch (error) {
 							console.warn(
@@ -538,16 +572,31 @@ export default function TranslationsPending() {
 		[categoryMap, selectedCategoryMajor],
 	);
 
+	const sourceLabelOptions = useMemo(() => {
+		const set = new Set<string>();
+		for (const doc of documents) {
+			const label = getSourceLabel(doc.originalUrl);
+			if (label) set.add(label);
+		}
+		const ordered = ["CREV", "ICR", "CREATION", "ANCIENTPATRIARCHS", "기타"];
+		return ordered.filter((v) => set.has(v));
+	}, [documents]);
+
 	const documentMatchesCategoryFilter = useCallback(
 		(doc: DocumentListItem) => {
-			if (selectedCategoryMajor === "전체") return true;
-			const p = splitCategoryName(doc.category);
-			if (!p) return false;
-			if (p.major !== selectedCategoryMajor) return false;
-			if (selectedCategoryMinor === "전체") return true;
-			return p.minor === selectedCategoryMinor;
+			let categoryMatch = true;
+			if (selectedCategoryMajor !== "전체") {
+				const p = splitCategoryName(doc.category);
+				if (!p) categoryMatch = false;
+				else if (p.major !== selectedCategoryMajor) categoryMatch = false;
+				else if (selectedCategoryMinor !== "전체") categoryMatch = p.minor === selectedCategoryMinor;
+			}
+			if (!categoryMatch) return false;
+			if (selectedSourceLabel === "전체") return true;
+			const label = getSourceLabel(doc.originalUrl) ?? "기타";
+			return label === selectedSourceLabel;
 		},
-		[selectedCategoryMajor, selectedCategoryMinor],
+		[selectedCategoryMajor, selectedCategoryMinor, selectedSourceLabel],
 	);
 
 	/** 현재 카테고리에 해당하는 원문 id (복사본 프리패치·순번 N용) */
@@ -570,7 +619,7 @@ export default function TranslationsPending() {
 		[documentIdsInCategory],
 	);
 
-	/** 인원 칸: 원문 id 목록에 대해 번역 중 복사본 수만 한 번에 조회 */
+	/** 생성 문서 수 칸: 원문 id 목록에 대해 생성된 복사본 총 개수 조회 */
 	useEffect(() => {
 		if (!documentIdsKey) return;
 		const ids = documentIdsKey
@@ -581,16 +630,24 @@ export default function TranslationsPending() {
 		let cancelled = false;
 		(async () => {
 			try {
-				const raw = await documentApi.getInTranslationCopyCounts(ids);
+				const pairs = await Promise.all(
+					ids.map(async (id) => {
+						try {
+							const copies = await documentApi.getCopiesBySourceId(id);
+							return [id, copies.length] as const;
+						} catch {
+							return [id, 0] as const;
+						}
+					}),
+				);
 				if (cancelled) return;
 				const next = new Map<number, number>();
-				for (const id of ids) {
-					const v = raw[String(id)] ?? (raw as Record<number, number>)[id];
-					next.set(id, typeof v === "number" && !Number.isNaN(v) ? v : 0);
+				for (const [id, count] of pairs) {
+					next.set(id, count);
 				}
-				setInTranslationCountBySourceId(next);
+				setGeneratedCopyCountBySourceId(next);
 			} catch {
-				if (!cancelled) setInTranslationCountBySourceId(new Map());
+				if (!cancelled) setGeneratedCopyCountBySourceId(new Map());
 			}
 		})();
 		return () => {
@@ -601,9 +658,24 @@ export default function TranslationsPending() {
 	/** 카테고리 + 정렬만 (상태는 원문·복사본 일치 여부로 별도 처리) */
 	const categoryFilteredAndSortedDocuments = useMemo(() => {
 		const filtered = [...documents].filter(documentMatchesCategoryFilter);
-		filtered.sort((a, b) => compareDocumentsForSort(a, b, sortOption));
+		if (sortOption.field === "generatedCopyCount") {
+			filtered.sort((a, b) => {
+				const av = generatedCopyCountBySourceId.get(a.id) ?? 0;
+				const bv = generatedCopyCountBySourceId.get(b.id) ?? 0;
+				const primary = sortOption.order === "asc" ? av - bv : bv - av;
+				if (primary !== 0) return primary;
+				return compareByCreatedAtThenId(a, b);
+			});
+		} else {
+			filtered.sort((a, b) => compareDocumentsForSort(a, b, sortOption));
+		}
 		return filtered;
-	}, [documents, documentMatchesCategoryFilter, sortOption]);
+	}, [
+		documents,
+		documentMatchesCategoryFilter,
+		sortOption,
+		generatedCopyCountBySourceId,
+	]);
 
 	/** 상태 필터 ≠ 전체: 복사본 기준 모드(원문 전부 펼침, 복사본 행만 필터) */
 	const isCopyFilterMode = selectedStatuses.length > 0;
@@ -727,9 +799,12 @@ export default function TranslationsPending() {
 								rowNumber: 1,
 							} as RowItem);
 						} else {
-							const sortedCopies = [...copiesFiltered].sort((a, b) =>
-								compareDocumentsForSort(a, b, sortOption),
-							);
+							const sortedCopies = [...copiesFiltered].sort((a, b) => {
+								if (sortOption.field === "generatedCopyCount") {
+									return compareByCreatedAtThenId(a, b);
+								}
+								return compareDocumentsForSort(a, b, sortOption);
+							});
 							sortedCopies.forEach((copy, idx) => {
 								rows.push({
 									...copy,
@@ -1015,7 +1090,8 @@ export default function TranslationsPending() {
 
 	const numberColumn: TableColumn<RowItem> = {
 		key: "rowNumber",
-		label: "인원",
+		label: "생성 문서",
+		sortKey: "generatedCopyCount",
 		width: "minmax(2.5rem, max-content)",
 		align: "center",
 		render: (item) => {
@@ -1032,8 +1108,8 @@ export default function TranslationsPending() {
 					<span style={{ fontSize: "12px", color: colors.secondaryText }} />
 				);
 			}
-			const working = inTranslationCountBySourceId.get(item.id);
-			if (working === undefined) {
+			const generated = generatedCopyCountBySourceId.get(item.id);
+			if (generated === undefined) {
 				return (
 					<span style={{ fontSize: "12px", color: colors.secondaryText }}>
 						…
@@ -1047,9 +1123,9 @@ export default function TranslationsPending() {
 						color: colors.primaryText,
 						fontWeight: 600,
 					}}
-					title="번역 중(IN_TRANSLATION)인 복사본 수"
+					title="해당 원문에서 생성된 복사본 문서 수"
 				>
-					{working}
+					{generated}
 				</span>
 			);
 		},
@@ -1080,7 +1156,9 @@ export default function TranslationsPending() {
 			sortKey: "title",
 			width: "minmax(2.5rem, 1fr)",
 			render: (item) => {
+				const row = item as RowItem;
 				const isFavorite = favoriteStatus.get(item.id) || false;
+				const sourceLabel = getSourceLabel(item.originalUrl);
 				return (
 					<div
 						style={{
@@ -1145,6 +1223,26 @@ export default function TranslationsPending() {
 						>
 							{item.title}
 						</span>
+						{!row.isLoadingRow && sourceLabel && (
+							<span
+								style={{
+									display: "inline-block",
+									padding: "2px 5px",
+									borderRadius: "4px",
+									fontSize: "10px",
+									fontWeight: 600,
+									backgroundColor:
+										sourceLabel === "기타" ? "#F3F4F6" : "#E6F0FF",
+									color: sourceLabel === "기타" ? "#6B7280" : "#1D4ED8",
+									flexShrink: 0,
+									lineHeight: 1.2,
+									alignSelf: "flex-start",
+								}}
+								title={item.originalUrl || "원문 URL 없음"}
+							>
+								{sourceLabel}
+							</span>
+						)}
 						{item.isCopyRow && !(item as RowItem).isLoadingRow && (
 							<span
 								style={{
@@ -1683,6 +1781,49 @@ export default function TranslationsPending() {
 											);
 										})}
 									</div>
+								</div>
+								<div
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: "6px",
+										flexShrink: 0,
+									}}
+								>
+									<span
+										style={{
+											fontSize: "11px",
+											fontWeight: 600,
+											color: colors.secondaryText,
+											whiteSpace: "nowrap",
+										}}
+									>
+										사이트
+									</span>
+									<select
+										value={selectedSourceLabel}
+										onChange={(e) => setSelectedSourceLabel(e.target.value)}
+										aria-label="사이트 필터"
+										style={{
+											height: "26px",
+											padding: "0 6px",
+											borderRadius: "6px",
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.surface,
+											color: colors.primaryText,
+											fontSize: "12px",
+											fontWeight: 500,
+											minWidth: "88px",
+											outline: "none",
+										}}
+									>
+										<option value="전체">전체</option>
+										{sourceLabelOptions.map((label) => (
+											<option key={label} value={label}>
+												{label}
+											</option>
+										))}
+									</select>
 								</div>
 							</div>
 
