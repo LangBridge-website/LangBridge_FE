@@ -18,6 +18,10 @@ import {
 	clearAllHighlights,
 	Paragraph,
 } from "../utils/paragraphUtils";
+import {
+	extractPersistableHtmlFromIframeDoc,
+	prepareHtmlForEditorDisplay,
+} from "../utils/htmlContentUtils";
 import ErrorBoundary from "../components/ErrorBoundary";
 import {
 	AlignLeft,
@@ -192,7 +196,7 @@ export default function DocumentReview() {
 					);
 					if (originalVersion) {
 						const processedOriginal = extractParagraphs(
-							originalVersion.content,
+							prepareHtmlForEditorDisplay(originalVersion.content),
 							"original",
 						);
 						setOriginalHtml(processedOriginal);
@@ -208,7 +212,7 @@ export default function DocumentReview() {
 					);
 					if (aiDraftVersion) {
 						const processedAiDraft = extractParagraphs(
-							aiDraftVersion.content,
+							prepareHtmlForEditorDisplay(aiDraftVersion.content),
 							"ai-draft",
 						);
 						setAiDraftHtml(processedAiDraft);
@@ -230,7 +234,7 @@ export default function DocumentReview() {
 							"버전",
 						);
 						const processedManual = extractParagraphs(
-							manualTranslationVersion.content,
+							prepareHtmlForEditorDisplay(manualTranslationVersion.content),
 							"manual",
 						);
 						setTranslationHtml(processedManual);
@@ -238,7 +242,7 @@ export default function DocumentReview() {
 					} else if (aiDraftVersion) {
 						console.log("ℹ️ 수동 번역이 없어 AI 초벌 번역 사용");
 						const processedAiDraft = extractParagraphs(
-							aiDraftVersion.content,
+							prepareHtmlForEditorDisplay(aiDraftVersion.content),
 							"ai-draft-editor",
 						);
 						setTranslationHtml(processedAiDraft);
@@ -994,7 +998,7 @@ export default function DocumentReview() {
 			return;
 		}
 
-		const editedHtml = iframeDoc.documentElement.outerHTML;
+		const editedHtml = extractPersistableHtmlFromIframeDoc(iframeDoc);
 		if (!editedHtml || editedHtml === translationContent) {
 			alert("저장할 변경사항이 없습니다.");
 			return;
@@ -1034,8 +1038,8 @@ export default function DocumentReview() {
 		if (iframe) {
 			const iframeDoc =
 				iframe.contentDocument || iframe.contentWindow?.document;
-			if (iframeDoc && iframeDoc.documentElement) {
-				editedHtml = iframeDoc.documentElement.outerHTML;
+			if (iframeDoc && iframeDoc.body) {
+				editedHtml = extractPersistableHtmlFromIframeDoc(iframeDoc);
 				console.log("💾 승인 시 수정된 HTML 사용");
 			}
 		}
