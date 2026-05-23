@@ -5,6 +5,8 @@ export interface CategoryResponse {
   code: string;
   name: string;
   description?: string;
+  creationKrSitePath?: string;
+  creationKrBoardId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -13,12 +15,16 @@ export interface CreateCategoryRequest {
   code: string;
   name: string;
   description?: string;
+  creationKrSitePath?: string;
+  creationKrBoardId?: string;
 }
 
 export interface UpdateCategoryRequest {
   code?: string;
   name?: string;
   description?: string;
+  creationKrSitePath?: string;
+  creationKrBoardId?: string;
 }
 
 export const categoryApi = {

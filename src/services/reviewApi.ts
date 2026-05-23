@@ -1,4 +1,5 @@
 import apiClient from './api';
+import axios from 'axios';
 
 export interface ReviewResponse {
   id: number;
@@ -27,6 +28,9 @@ export interface ReviewResponse {
   reviewedAt?: string;
   finalApprovalAt?: string;
   publishedAt?: string;
+  publishedUrl?: string;
+  publishStatus?: 'NONE' | 'PENDING' | 'SUCCESS' | 'FAILED' | string;
+  publishError?: string;
   isComplete?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -115,11 +119,27 @@ export const reviewApi = {
   },
 
   /**
-   * 리뷰 게시
+   * 리뷰 게시 (creation.kr — 게시판 선택 optional)
    */
-  publishReview: async (id: number): Promise<ReviewResponse> => {
-    const response = await apiClient.post<ReviewResponse>(`/reviews/${id}/publish`);
-    return response.data;
+  publishReview: async (
+    id: number,
+    request?: { sitePath: string; boardId: string },
+  ): Promise<ReviewResponse> => {
+    try {
+      const response = await apiClient.post<ReviewResponse>(
+        `/reviews/${id}/publish`,
+        request ?? {},
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data && typeof error.response.data === 'object') {
+        const data = error.response.data as ReviewResponse;
+        if (data.id != null) {
+          return data;
+        }
+      }
+      throw error;
+    }
   },
 };
 

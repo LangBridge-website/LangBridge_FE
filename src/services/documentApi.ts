@@ -64,6 +64,11 @@ export interface DocumentResponse {
     email: string;
     name: string;
   };
+  publishedUrl?: string;
+  approvedReviewId?: number;
+  publishStatus?: string;
+  publishError?: string;
+  publishedAt?: string;
 }
 
 export interface CreateDocumentVersionRequest {

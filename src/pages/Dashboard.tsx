@@ -11,6 +11,7 @@ import { reviewApi, ReviewResponse } from '../services/reviewApi';
 import { categoryApi, CategoryResponse } from '../services/categoryApi';
 import { translationWorkApi } from '../services/translationWorkApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
+import { CreationKrPublishButton } from '../components/CreationKrPublishButton';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -53,6 +54,23 @@ const Dashboard: React.FC = () => {
       console.error('찜 상태 변경 실패:', error);
       alert('찜 상태를 변경하는데 실패했습니다.');
     }
+  };
+
+  const handleApprovedPublishSuccess = (docId: number, response: ReviewResponse) => {
+    setData((prev) => ({
+      ...prev,
+      approvedDocuments: prev.approvedDocuments?.map((d) =>
+        d.id === docId
+          ? {
+              ...d,
+              documentStatus: response.publishStatus === 'SUCCESS' ? 'PUBLISHED' : d.documentStatus,
+              publishStatus: response.publishStatus,
+              publishedUrl: response.publishedUrl,
+              publishError: response.publishError,
+            }
+          : d,
+      ),
+    }));
   };
 
   const isAdmin = useMemo(() => {
@@ -141,19 +159,17 @@ const Dashboard: React.FC = () => {
           try {
             // 방법 1: APPROVED 상태의 문서 가져오기
             const approvedDocs = await documentApi.getAllDocuments({ status: 'APPROVED' });
+            const publishedDocs = await documentApi.getAllDocuments({ status: 'PUBLISHED' });
             console.log('✅ APPROVED 상태 문서:', approvedDocs.length, '개');
+            console.log('✅ PUBLISHED 상태 문서:', publishedDocs.length, '개');
             
-            // 방법 2: APPROVED 리뷰가 있는 문서도 확인
             const approvedReviews = await reviewApi.getAllReviews({ status: 'APPROVED' });
             console.log('✅ APPROVED 리뷰:', approvedReviews.length, '개');
             
-            // 두 방법을 결합하여 중복 제거
             const approvedDocIds = new Set<number>();
             
-            // APPROVED 상태 문서 추가
             approvedDocs.forEach(doc => approvedDocIds.add(doc.id));
-            
-            // APPROVED 리뷰가 있는 문서 추가
+            publishedDocs.forEach(doc => approvedDocIds.add(doc.id));
             approvedReviews.forEach(review => approvedDocIds.add(review.document.id));
             
             // 모든 승인된 문서 가져오기
@@ -179,6 +195,7 @@ const Dashboard: React.FC = () => {
               .slice(0, 3)
               .map(doc => {
                 const review = approvedReviews.find(r => r.document.id === doc.id);
+                const reviewId = doc.approvedReviewId ?? review?.id;
                 return {
                   id: doc.id,
                   title: doc.title,
@@ -188,6 +205,12 @@ const Dashboard: React.FC = () => {
                   lastModified: review?.finalApprovalAt 
                     ? formatLastModifiedDate(review.finalApprovalAt)
                     : (doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined),
+                  documentStatus: doc.status,
+                  categoryId: doc.categoryId,
+                  approvedReviewId: reviewId,
+                  publishedUrl: doc.publishedUrl ?? review?.publishedUrl,
+                  publishStatus: doc.publishStatus ?? review?.publishStatus,
+                  publishError: doc.publishError ?? review?.publishError,
                 };
               });
             
@@ -663,9 +686,10 @@ const Dashboard: React.FC = () => {
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'flex-start',
+                          gap: '12px',
                         }}
                       >
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
                               fontSize: '13px',
@@ -687,20 +711,41 @@ const Dashboard: React.FC = () => {
                             {doc.category}
                           </div>
                         </div>
-                        {doc.lastModified && (
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              color: '#696969',
-                              fontFamily: 'system-ui, Pretendard, sans-serif',
-                              marginLeft: '12px',
-                              flexShrink: 0,
-                              textAlign: 'right',
-                            }}
-                          >
-                            {doc.lastModified}
-                          </div>
-                        )}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-end',
+                            gap: '6px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {doc.lastModified && (
+                            <div
+                              style={{
+                                fontSize: '12px',
+                                color: '#696969',
+                                fontFamily: 'system-ui, Pretendard, sans-serif',
+                                textAlign: 'right',
+                              }}
+                            >
+                              {doc.lastModified}
+                            </div>
+                          )}
+                          {doc.approvedReviewId && (
+                            <CreationKrPublishButton
+                              reviewId={doc.approvedReviewId}
+                              categoryId={doc.categoryId}
+                              documentTitle={doc.title}
+                              publishStatus={doc.publishStatus}
+                              publishedUrl={doc.publishedUrl}
+                              publishError={doc.publishError}
+                              documentStatus={doc.documentStatus}
+                              compact
+                              onSuccess={(response) => handleApprovedPublishSuccess(doc.id, response)}
+                            />
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

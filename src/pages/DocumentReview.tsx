@@ -9,6 +9,7 @@ import {
 import { reviewApi, type ReviewResponse } from "../services/reviewApi";
 import { colors } from "../constants/designTokens";
 import { Button } from "../components/Button";
+import { CreationKrPublishButton } from "../components/CreationKrPublishButton";
 import {
 	extractParagraphs,
 	getParagraphs,
@@ -134,16 +135,29 @@ export default function DocumentReview() {
 						setReview(review);
 						console.log("✅ 리뷰 조회 성공 (ID로):", review);
 					} else {
-						// reviewId가 없으면 documentId로 조회
-						const reviews = await reviewApi.getAllReviews({
+						// reviewId가 없으면 documentId로 조회 (PENDING → APPROVED 순)
+						const pendingReviews = await reviewApi.getAllReviews({
 							documentId,
 							status: "PENDING",
 						});
-						if (reviews && reviews.length > 0) {
-							setReview(reviews[0]); // 첫 번째 PENDING 리뷰 사용
-							console.log("✅ 리뷰 조회 성공:", reviews[0]);
+						if (pendingReviews.length > 0) {
+							setReview(pendingReviews[0]);
+							console.log("✅ 리뷰 조회 성공 (PENDING):", pendingReviews[0]);
+						} else if (doc.approvedReviewId) {
+							const approvedReview = await reviewApi.getReviewById(doc.approvedReviewId);
+							setReview(approvedReview);
+							console.log("✅ 리뷰 조회 성공 (approvedReviewId):", approvedReview);
 						} else {
-							console.warn("⚠️ PENDING 상태의 리뷰가 없습니다.");
+							const approvedReviews = await reviewApi.getAllReviews({
+								documentId,
+								status: "APPROVED",
+							});
+							if (approvedReviews.length > 0) {
+								setReview(approvedReviews[0]);
+								console.log("✅ 리뷰 조회 성공 (APPROVED):", approvedReviews[0]);
+							} else {
+								console.warn("⚠️ 연결된 리뷰가 없습니다.");
+							}
 						}
 					}
 				} catch (reviewError: any) {
@@ -1393,8 +1407,8 @@ export default function DocumentReview() {
 					</label>
 				</div>
 
-				{/* 오른쪽: HTML 다운로드, 승인/반려 버튼 */}
-				<div style={{ display: "flex", gap: "8px" }}>
+				{/* 오른쪽: HTML 다운로드, 승인/반려 또는 creation.kr 게시 */}
+				<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
 					<Button
 						variant="secondary"
 						onClick={() => {
@@ -1418,20 +1432,56 @@ export default function DocumentReview() {
 					>
 						💾 HTML 다운로드
 					</Button>
-					<Button
-						variant="secondary"
-						onClick={() => setShowRejectModal(true)}
-						style={{ fontSize: "12px" }}
-					>
-						반려
-					</Button>
-					<Button
-						variant="primary"
-						onClick={handleApprove}
-						style={{ fontSize: "12px" }}
-					>
-						승인
-					</Button>
+
+					{review &&
+						review.status === "APPROVED" &&
+						(document.status === "APPROVED" || document.status === "PUBLISHED") && (
+							<CreationKrPublishButton
+								reviewId={review.id}
+								categoryId={document.categoryId}
+								documentTitle={document.title}
+								publishStatus={review.publishStatus ?? document.publishStatus}
+								publishedUrl={review.publishedUrl ?? document.publishedUrl}
+								publishError={review.publishError ?? document.publishError}
+								documentStatus={document.status}
+								onSuccess={(response) => {
+									setReview(response);
+									setDocument((prev) =>
+										prev
+											? {
+													...prev,
+													status:
+														response.publishStatus === "SUCCESS"
+															? "PUBLISHED"
+															: prev.status,
+													publishedUrl: response.publishedUrl ?? prev.publishedUrl,
+													publishStatus: response.publishStatus,
+													publishError: response.publishError,
+												}
+											: prev,
+									);
+								}}
+							/>
+						)}
+
+					{document.status === "PENDING_REVIEW" && review?.status === "PENDING" && (
+						<>
+							<Button
+								variant="secondary"
+								onClick={() => setShowRejectModal(true)}
+								style={{ fontSize: "12px" }}
+							>
+								반려
+							</Button>
+							<Button
+								variant="primary"
+								onClick={handleApprove}
+								style={{ fontSize: "12px" }}
+							>
+								승인
+							</Button>
+						</>
+					)}
 				</div>
 			</div>
 
