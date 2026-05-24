@@ -9,13 +9,12 @@ import {
 	DocumentFilter,
 	type DocumentSortOption,
 } from "../types/document";
-import type { DocumentState } from "../types/translation";
+import { DocumentState } from "../types/translation";
 import { colors } from "../constants/designTokens";
 import { Button } from "../components/Button";
 import {
 	documentApi,
 	type DocumentResponse,
-	type DocumentVersionResponse,
 } from "../services/documentApi";
 import { categoryApi } from "../services/categoryApi";
 import {
@@ -37,7 +36,7 @@ import {
 } from "../constants/documentStatusLabels";
 import { useUser } from "../contexts/UserContext";
 import { UserRole } from "../types/user";
-import { useMyInTranslationBySourceId } from "../hooks/useMyInTranslationBySourceId";
+import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
 
 /** 원문·복사본 공통: 빈 배열 = 전체, 그 외 = 선택한 DocumentState 중 하나와 같으면 일치 */
 function documentMatchesStatusFilter(
@@ -92,58 +91,6 @@ function compareDocumentsForSort(
 }
 
 /**
- * HTML에서 문단 수를 계산하는 함수
- * data-paragraph-index 속성이 있으면 그것을 사용하고, 없으면 문단 요소를 직접 찾아서 계산
- */
-function countParagraphs(html: string): number {
-	if (!html || html.trim().length === 0) {
-		return 0;
-	}
-
-	try {
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, "text/html");
-		const body = doc.body;
-
-		// data-paragraph-index 속성이 있는 요소들 찾기
-		const indexedParagraphs = body.querySelectorAll("[data-paragraph-index]");
-		if (indexedParagraphs.length > 0) {
-			// 인덱스가 있으면 최대 인덱스 + 1이 문단 수
-			let maxIndex = -1;
-			indexedParagraphs.forEach((el) => {
-				const indexStr = (el as HTMLElement).getAttribute(
-					"data-paragraph-index",
-				);
-				if (indexStr) {
-					const index = Number.parseInt(indexStr, 10);
-					if (!isNaN(index) && index > maxIndex) {
-						maxIndex = index;
-					}
-				}
-			});
-			return maxIndex + 1;
-		}
-
-		// 인덱스가 없으면 문단 요소를 직접 찾아서 계산
-		const paragraphSelectors =
-			"p, h1, h2, h3, h4, h5, h6, div, li, blockquote, article, section, figure, figcaption";
-		const elements = body.querySelectorAll(paragraphSelectors);
-		let count = 0;
-		elements.forEach((el) => {
-			const text = el.textContent?.trim();
-			const hasImages = el.querySelectorAll("img").length > 0;
-			if ((text && text.length > 0) || hasImages) {
-				count++;
-			}
-		});
-		return count;
-	} catch (error) {
-		console.error("문단 수 계산 실패:", error);
-		return 0;
-	}
-}
-
-/**
  * 진행률 계산 함수
  * @param completedParagraphs 완료된 문단 인덱스 배열
  * @param totalParagraphs 전체 문단 수
@@ -182,28 +129,19 @@ function getSourceLabel(originalUrl?: string): string | null {
 const convertToDocumentListItem = (
 	doc: DocumentResponse & {
 		lockInfo?: LockStatusResponse | null;
-		originalVersion?: DocumentVersionResponse | null;
 	},
 	categoryMap?: Map<number, string>,
+	originalParagraphCount?: number,
 ): DocumentListItem => {
 	// 진행률 계산
 	let progress = 0;
 
-	if (doc.status === "APPROVED") {
-		progress = 100; // 완료된 문서는 100%
+	if (doc.status === "APPROVED" || doc.status === "PUBLISHED") {
+		progress = 100;
 	} else if (doc.status === "IN_TRANSLATION") {
-		// IN_TRANSLATION 상태인 경우 진행률 계산
-		if (doc.originalVersion?.content) {
-			const totalParagraphs = countParagraphs(doc.originalVersion.content);
-			if (totalParagraphs > 0) {
-				// completedParagraphs가 있으면 사용, 없으면 0%
-				const completedCount = doc.completedParagraphs?.length || 0;
-				progress = Math.round((completedCount / totalParagraphs) * 100);
-			} else {
-				console.warn(`⚠️ 문서 ${doc.id}: 문단 수가 0입니다.`);
-			}
-		} else {
-			console.warn(`⚠️ 문서 ${doc.id}: ORIGINAL 버전을 찾을 수 없습니다.`);
+		const totalParagraphs = originalParagraphCount ?? 0;
+		if (totalParagraphs > 0) {
+			progress = calculateProgress(doc.completedParagraphs, totalParagraphs);
 		}
 	}
 	// PENDING_TRANSLATION 상태는 기본값 0% 유지
@@ -281,9 +219,6 @@ export default function TranslationsPending() {
 	const [copiesBySourceId, setCopiesBySourceId] = useState<
 		Map<number, DocumentListItem[]>
 	>(new Map());
-	/** 원문별 생성된 복사본 총 개수 — 생성 문서 수 칸/정렬 전용 */
-	const [generatedCopyCountBySourceId, setGeneratedCopyCountBySourceId] =
-		useState<Map<number, number>>(() => new Map());
 	/** 해당 원문의 복사본(수정 중인 사람들의 문서) 로딩 중인 원문 ID */
 	const [loadingCopySourceIds, setLoadingCopySourceIds] = useState<Set<number>>(
 		new Set(),
@@ -292,13 +227,11 @@ export default function TranslationsPending() {
 	const [continueTranslationLoading, setContinueTranslationLoading] =
 		useState(false);
 
-	const myInTranslationBySourceId = useMyInTranslationBySourceId(
-		documents,
-		user?.id,
-	);
-
 	const copiesBySourceIdRef = useRef(copiesBySourceId);
 	copiesBySourceIdRef.current = copiesBySourceId;
+	const completedParagraphsByDocIdRef = useRef<Map<number, number[]>>(
+		new Map(),
+	);
 
 	// 카테고리 목록 로드
 	useEffect(() => {
@@ -365,33 +298,19 @@ export default function TranslationsPending() {
 		loadFavoriteStatus();
 	}, [documents]);
 
-	// API에서 문서 목록 가져오기
+	// API에서 문서 목록 가져오기 (마운트 1회 — categoryMap 변경 시 재호출하지 않음)
 	useEffect(() => {
+		let cancelled = false;
+
 		const fetchDocuments = async () => {
 			try {
 				setLoading(true);
 				setError(null);
-				console.log("📋 번역 문서 목록 조회 시작...");
 
-				// 원문만 조회(sourcesOnly): 복사본 생성 후에도 원문이 리스트에서 사라지지 않도록
 				const response = await documentApi.getAllDocuments({
 					sourcesOnly: true,
 				});
-				console.log("✅ 문서 목록 조회 성공(원문만):", response.length, "개");
-				console.log("📊 문서 상태 분포:", {
-					전체: response.length,
-					PENDING_TRANSLATION: response.filter(
-						(d) => d.status === "PENDING_TRANSLATION",
-					).length,
-					IN_TRANSLATION: response.filter((d) => d.status === "IN_TRANSLATION")
-						.length,
-					기타: response.filter(
-						(d) =>
-							!["PENDING_TRANSLATION", "IN_TRANSLATION"].includes(d.status),
-					).length,
-				});
 
-				// 번역 관련 상태 문서만 (원문은 이미 sourcesOnly로만 옴)
 				const pendingDocs = response.filter((doc) =>
 					[
 						"PENDING_TRANSLATION",
@@ -401,63 +320,19 @@ export default function TranslationsPending() {
 						"PUBLISHED",
 					].includes(doc.status),
 				);
-				console.log("📌 번역 관련 문서(원본만):", pendingDocs.length, "개");
 
-				// IN_TRANSLATION만 버전 API 호출(원문 HTML·진행률). 그 외는 목록 응답 필드만 사용.
-				const docsWithLockInfo = await Promise.all(
-					pendingDocs.map(async (doc) => {
-						let originalVersion = null;
-						let currentVersionNumber: number | null =
-							doc.currentVersionNumber ?? null;
-						let userFacingVersionNumber: number | null | undefined =
-							doc.userFacingVersionNumber;
+				const completedMap = new Map<number, number[]>();
+				for (const doc of pendingDocs) {
+					if (doc.completedParagraphs?.length) {
+						completedMap.set(doc.id, doc.completedParagraphs);
+					}
+				}
+				completedParagraphsByDocIdRef.current = completedMap;
 
-						if (doc.status !== "IN_TRANSLATION") {
-							return {
-								...doc,
-								lockInfo: null as LockStatusResponse | null,
-								originalVersion: null,
-								currentVersionNumber,
-								userFacingVersionNumber,
-							};
-						}
+				if (cancelled) return;
 
-						try {
-							const versions = await documentApi.getDocumentVersions(doc.id);
-							originalVersion =
-								versions.find((v) => v.versionType === "ORIGINAL") || null;
-							if (doc.currentVersionId) {
-								const currentVer = versions.find(
-									(v) => v.id === doc.currentVersionId,
-								);
-								currentVersionNumber = currentVer?.versionNumber ?? null;
-								if (currentVer) {
-									userFacingVersionNumber =
-										currentVer.versionType === "ORIGINAL"
-											? 1
-											: currentVer.versionNumber;
-								}
-							}
-						} catch (error) {
-							console.warn(
-								`문서 ${doc.id}의 버전 정보를 가져올 수 없습니다:`,
-								error,
-							);
-						}
-
-						return {
-							...doc,
-							lockInfo: null as LockStatusResponse | null,
-							originalVersion,
-							currentVersionNumber,
-							userFacingVersionNumber,
-						};
-					}),
-				);
-
-				const converted = docsWithLockInfo.map((doc) => {
+				const converted = pendingDocs.map((doc) => {
 					const item = convertToDocumentListItem(doc, categoryMap);
-					// 작업자: 문서 생성자 또는 마지막 수정자 (락 제거됨)
 					if (
 						["PENDING_REVIEW", "APPROVED", "PUBLISHED"].includes(doc.status) &&
 						doc.lastModifiedBy?.name
@@ -484,28 +359,40 @@ export default function TranslationsPending() {
 					return item;
 				});
 				setDocuments(converted);
-
-				if (converted.length === 0 && response.length > 0) {
-					console.warn(
-						"⚠️ 목록에 맞는 문서가 없습니다. 다른 상태의 문서만 존재합니다.",
-					);
-				}
 			} catch (error) {
+				if (cancelled) return;
 				console.error("❌ 문서 목록 조회 실패:", error);
 				if (error instanceof Error) {
-					console.error("에러 메시지:", error.message);
-					console.error("에러 스택:", error.stack);
 					setError(`문서 목록을 불러오는데 실패했습니다: ${error.message}`);
 				} else {
 					setError("문서 목록을 불러오는데 실패했습니다.");
 				}
 				setDocuments([]);
 			} finally {
-				setLoading(false);
+				if (!cancelled) setLoading(false);
 			}
 		};
 
 		fetchDocuments();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
+	useEffect(() => {
+		if (categoryMap.size === 0) return;
+		setDocuments((prev) =>
+			prev.map((doc) => ({
+				...doc,
+				category:
+					doc.categoryId != null && categoryMap.has(doc.categoryId)
+						? categoryMap.get(doc.categoryId)!
+						: doc.categoryId != null
+							? `카테고리 ${doc.categoryId}`
+							: "미분류",
+			})),
+		);
 	}, [categoryMap]);
 
 	type RowItem = DocumentListItem & {
@@ -605,6 +492,42 @@ export default function TranslationsPending() {
 		return filtered.map((d) => d.id);
 	}, [documents, documentMatchesCategoryFilter]);
 
+	const progressDocumentIds = useMemo(
+		() =>
+			documents
+				.filter((d) => d.status === DocumentState.IN_TRANSLATION)
+				.map((d) => d.id),
+		[documents],
+	);
+
+	const allSourceIds = useMemo(
+		() => documents.map((d) => d.id).filter((id) => !Number.isNaN(id)),
+		[documents],
+	);
+
+	const {
+		generatedCopyCountBySourceId,
+		myInTranslationBySourceId,
+		originalParagraphCountByDocumentId,
+	} = useSourceCopyMetadata(allSourceIds, user?.id, progressDocumentIds);
+
+	/** 배치 문단 수 로드 후 IN_TRANSLATION 진행률 반영 */
+	useEffect(() => {
+		if (originalParagraphCountByDocumentId.size === 0) return;
+		setDocuments((prev) =>
+			prev.map((doc) => {
+				if (doc.status !== DocumentState.IN_TRANSLATION) return doc;
+				const total = originalParagraphCountByDocumentId.get(doc.id);
+				if (total == null || total <= 0) return doc;
+				const completed = completedParagraphsByDocIdRef.current.get(doc.id);
+				return {
+					...doc,
+					progress: calculateProgress(completed, total),
+				};
+			}),
+		);
+	}, [originalParagraphCountByDocumentId]);
+
 	/** 생성일 오름차순(동일 시 id) 기준 고정 순번 — 정렬과 무관하게 같은 문서는 항상 같은 N */
 	const createdAtRankBySourceId = useMemo(() => {
 		const filtered = [...documents].filter(documentMatchesCategoryFilter);
@@ -613,47 +536,6 @@ export default function TranslationsPending() {
 		filtered.forEach((d, i) => map.set(d.id, i + 1));
 		return map;
 	}, [documents, documentMatchesCategoryFilter]);
-
-	const documentIdsKey = useMemo(
-		() => [...documentIdsInCategory].sort((a, b) => a - b).join(","),
-		[documentIdsInCategory],
-	);
-
-	/** 생성 문서 수 칸: 원문 id 목록에 대해 생성된 복사본 총 개수 조회 */
-	useEffect(() => {
-		if (!documentIdsKey) return;
-		const ids = documentIdsKey
-			.split(",")
-			.map((s) => Number.parseInt(s, 10))
-			.filter((n) => !Number.isNaN(n));
-		if (ids.length === 0) return;
-		let cancelled = false;
-		(async () => {
-			try {
-				const pairs = await Promise.all(
-					ids.map(async (id) => {
-						try {
-							const copies = await documentApi.getCopiesBySourceId(id);
-							return [id, copies.length] as const;
-						} catch {
-							return [id, 0] as const;
-						}
-					}),
-				);
-				if (cancelled) return;
-				const next = new Map<number, number>();
-				for (const [id, count] of pairs) {
-					next.set(id, count);
-				}
-				setGeneratedCopyCountBySourceId(next);
-			} catch {
-				if (!cancelled) setGeneratedCopyCountBySourceId(new Map());
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [documentIdsKey]);
 
 	/** 카테고리 + 정렬만 (상태는 원문·복사본 일치 여부로 별도 처리) */
 	const categoryFilteredAndSortedDocuments = useMemo(() => {

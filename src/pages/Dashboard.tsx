@@ -6,12 +6,57 @@ import { UserRole } from '../types/user';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Document, DashboardData } from '../types/dashboard';
-import { documentApi, DocumentResponse } from '../services/documentApi';
-import { reviewApi, ReviewResponse } from '../services/reviewApi';
-import { categoryApi, CategoryResponse } from '../services/categoryApi';
-import { translationWorkApi } from '../services/translationWorkApi';
+import { documentApi, DashboardDocumentCardResponse } from '../services/documentApi';
+import { ReviewResponse } from '../services/reviewApi';
+import { categoryApi } from '../services/categoryApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
 import { CreationKrPublishButton } from '../components/CreationKrPublishButton';
+
+function categoryLabel(categoryId: number | undefined, categoryMap: Map<number, string>): string {
+  if (categoryId == null) return '미분류';
+  return categoryMap.has(categoryId) ? categoryMap.get(categoryId)! : `카테고리 ${categoryId}`;
+}
+
+function mapDashboardCard(
+  card: DashboardDocumentCardResponse,
+  categoryMap: Map<number, string>,
+  options?: { progress?: number },
+): Document {
+  return {
+    id: card.id,
+    title: card.title,
+    categoryId: card.categoryId,
+    category: categoryLabel(card.categoryId, categoryMap),
+    estimatedVolume: card.estimatedLength ? `약 ${card.estimatedLength}자` : undefined,
+    lastModified: card.displayAt
+      ? formatLastModifiedDate(card.displayAt)
+      : card.updatedAt
+        ? formatLastModifiedDate(card.updatedAt)
+        : undefined,
+    progress: options?.progress,
+    translator: card.translatorName,
+    documentStatus: card.documentStatus,
+    approvedReviewId: card.approvedReviewId,
+    publishedUrl: card.publishedUrl,
+    publishStatus: card.publishStatus,
+    publishError: card.publishError,
+  };
+}
+
+function remapDashboardCategories(data: DashboardData, categoryMap: Map<number, string>): DashboardData {
+  const remap = (doc: Document): Document => ({
+    ...doc,
+    category: categoryLabel(doc.categoryId, categoryMap),
+  });
+  return {
+    ...data,
+    pendingDocuments: data.pendingDocuments.map(remap),
+    workingDocuments: data.workingDocuments.map(remap),
+    latestReviewDocument: data.latestReviewDocument ? remap(data.latestReviewDocument) : undefined,
+    approvedDocuments: data.approvedDocuments?.map(remap),
+    rejectedDocuments: data.rejectedDocuments?.map(remap),
+  };
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -94,169 +139,30 @@ const Dashboard: React.FC = () => {
     loadCategories();
   }, []);
 
-  // 대시보드 데이터 로드
+  // 대시보드 데이터 로드 (마운트 1회 — categoryMap 변경 시 재호출하지 않음)
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
         setLoading(true);
-
-        // 1. 번역 대기 문서
-        const pendingDocs = await documentApi.getAllDocuments({ status: 'PENDING_TRANSLATION' });
-        const pendingDocuments: Document[] = pendingDocs.slice(0, 3).map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          category: doc.categoryId && categoryMap.has(doc.categoryId) 
-            ? categoryMap.get(doc.categoryId)! 
-            : (doc.categoryId ? `카테고리 ${doc.categoryId}` : '미분류'),
-          estimatedVolume: doc.estimatedLength ? `약 ${doc.estimatedLength}자` : undefined,
-          progress: 0,
-        }));
-
-        // 2. 내가 작업 중인 문서 (IN_TRANSLATION: 생성 또는 최근 수정이 나인 복사본)
-        const inTranslationDocs = await documentApi.getAllDocuments({ status: 'IN_TRANSLATION' });
-        const myId = user?.id;
-        const myWorkingDocs: DocumentResponse[] = myId != null
-          ? inTranslationDocs.filter(
-              (doc) =>
-                Number(doc.createdBy?.id) === Number(myId) ||
-                Number(doc.lastModifiedBy?.id) === Number(myId),
-            )
-          : [];
-        const workingDocuments: Document[] = myWorkingDocs.slice(0, 3).map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          category: doc.categoryId && categoryMap.has(doc.categoryId)
-            ? categoryMap.get(doc.categoryId)!
-            : (doc.categoryId ? `카테고리 ${doc.categoryId}` : '미분류'),
-          lastModified: doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined,
-        }));
-
-        // 3. 검토 대기 문서 (관리자만)
-        let reviewPendingCount = 0;
-        let latestReviewDocument: Document | undefined;
-        if (isAdmin) {
-          const reviewPendingDocs = await documentApi.getAllDocuments({ status: 'PENDING_REVIEW' });
-          reviewPendingCount = reviewPendingDocs.length;
-          if (reviewPendingDocs.length > 0) {
-            const latestDoc = reviewPendingDocs[0];
-            const reviews = await reviewApi.getAllReviews({ documentId: latestDoc.id, status: 'PENDING' });
-            if (reviews.length > 0) {
-              latestReviewDocument = {
-                id: latestDoc.id,
-                title: latestDoc.title,
-                category: latestDoc.categoryId && categoryMap.has(latestDoc.categoryId)
-                  ? categoryMap.get(latestDoc.categoryId)!
-                  : (latestDoc.categoryId ? `카테고리 ${latestDoc.categoryId}` : '미분류'),
-                translator: reviews[0].reviewer?.name,
-              };
-            }
-          }
-        }
-
-        // 4. 승인된 문서 (관리자만) - APPROVED 상태의 문서 또는 APPROVED 리뷰가 있는 문서
-        let approvedDocuments: Document[] = [];
-        if (isAdmin) {
-          try {
-            // 방법 1: APPROVED 상태의 문서 가져오기
-            const approvedDocs = await documentApi.getAllDocuments({ status: 'APPROVED' });
-            const publishedDocs = await documentApi.getAllDocuments({ status: 'PUBLISHED' });
-            console.log('✅ APPROVED 상태 문서:', approvedDocs.length, '개');
-            console.log('✅ PUBLISHED 상태 문서:', publishedDocs.length, '개');
-            
-            const approvedReviews = await reviewApi.getAllReviews({ status: 'APPROVED' });
-            console.log('✅ APPROVED 리뷰:', approvedReviews.length, '개');
-            
-            const approvedDocIds = new Set<number>();
-            
-            approvedDocs.forEach(doc => approvedDocIds.add(doc.id));
-            publishedDocs.forEach(doc => approvedDocIds.add(doc.id));
-            approvedReviews.forEach(review => approvedDocIds.add(review.document.id));
-            
-            // 모든 승인된 문서 가져오기
-            const allApprovedDocs = await Promise.all(
-              Array.from(approvedDocIds).slice(0, 5).map(async (docId) => {
-                try {
-                  return await documentApi.getDocument(docId);
-                } catch (error) {
-                  console.error(`문서 ${docId} 조회 실패:`, error);
-                  return null;
-                }
-              })
-            );
-            
-            // 최신 순으로 정렬 (updatedAt 기준)
-            approvedDocuments = allApprovedDocs
-              .filter((doc): doc is DocumentResponse => doc !== null)
-              .sort((a, b) => {
-                const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-                const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-                return bTime - aTime; // 최신순
-              })
-              .slice(0, 3)
-              .map(doc => {
-                const review = approvedReviews.find(r => r.document.id === doc.id);
-                const reviewId = doc.approvedReviewId ?? review?.id;
-                return {
-                  id: doc.id,
-                  title: doc.title,
-                  category: doc.categoryId && categoryMap.has(doc.categoryId)
-                    ? categoryMap.get(doc.categoryId)!
-                    : (doc.categoryId ? `카테고리 ${doc.categoryId}` : '미분류'),
-                  lastModified: review?.finalApprovalAt 
-                    ? formatLastModifiedDate(review.finalApprovalAt)
-                    : (doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined),
-                  documentStatus: doc.status,
-                  categoryId: doc.categoryId,
-                  approvedReviewId: reviewId,
-                  publishedUrl: doc.publishedUrl ?? review?.publishedUrl,
-                  publishStatus: doc.publishStatus ?? review?.publishStatus,
-                  publishError: doc.publishError ?? review?.publishError,
-                };
-              });
-            
-            console.log('✅ 최종 승인된 문서:', approvedDocuments.length, '개');
-          } catch (error) {
-            console.error('승인된 문서 조회 실패:', error);
-          }
-        }
-
-        // 5. 반려된 문서 (관리자만) - REJECTED 상태의 리뷰가 있는 문서들
-        let rejectedDocuments: Document[] = [];
-        if (isAdmin) {
-          const rejectedReviews = await reviewApi.getAllReviews({ status: 'REJECTED' });
-          const rejectedDocIds = new Set(rejectedReviews.map(r => r.document.id));
-          const rejectedDocs = await Promise.all(
-            Array.from(rejectedDocIds).slice(0, 3).map(async (docId) => {
-              try {
-                return await documentApi.getDocument(docId);
-              } catch (error) {
-                console.error(`문서 ${docId} 조회 실패:`, error);
-                return null;
-              }
-            })
-          );
-          rejectedDocuments = rejectedDocs
-            .filter((doc): doc is DocumentResponse => doc !== null)
-            .map(doc => {
-              const review = rejectedReviews.find(r => r.document.id === doc.id);
-              return {
-                id: doc.id,
-                title: doc.title,
-                category: doc.categoryId && categoryMap.has(doc.categoryId)
-                  ? categoryMap.get(doc.categoryId)!
-                  : (doc.categoryId ? `카테고리 ${doc.categoryId}` : '미분류'),
-                lastModified: review?.reviewedAt ? formatLastModifiedDate(review.reviewedAt) : undefined,
-              };
-            });
-        }
+        const summary = await documentApi.getDashboardSummary();
 
         setData({
-          pendingDocuments,
-          workingDocuments,
-          reviewPendingCount,
-          latestReviewDocument,
-          approvedDocuments,
-          rejectedDocuments,
+          pendingDocuments: summary.pendingDocuments.map((card) =>
+            mapDashboardCard(card, categoryMap, { progress: 0 }),
+          ),
+          workingDocuments: summary.workingDocuments.map((card) =>
+            mapDashboardCard(card, categoryMap),
+          ),
+          reviewPendingCount: summary.reviewPendingCount,
+          latestReviewDocument: summary.latestReviewDocument
+            ? mapDashboardCard(summary.latestReviewDocument, categoryMap)
+            : undefined,
+          approvedDocuments: summary.approvedDocuments?.map((card) =>
+            mapDashboardCard(card, categoryMap),
+          ),
+          rejectedDocuments: summary.rejectedDocuments?.map((card) =>
+            mapDashboardCard(card, categoryMap),
+          ),
         });
       } catch (error) {
         console.error('대시보드 데이터 로드 실패:', error);
@@ -265,39 +171,36 @@ const Dashboard: React.FC = () => {
       }
     };
 
-    // 카테고리 맵이 로드되거나 관리자가 아닌 경우 데이터 로드
-    // 관리자인 경우 카테고리 맵이 없어도 데이터 로드 (카테고리 없이 표시)
-    if (!isAdmin || categoryMap.size > 0) {
-      loadDashboardData();
-    } else if (isAdmin) {
-      // 관리자인데 카테고리 맵이 아직 로드되지 않은 경우, 일단 데이터 로드 (카테고리 ID로 표시)
-      loadDashboardData();
-    }
-  }, [isAdmin, categoryMap, user?.id]);
+    loadDashboardData();
+  }, [user?.id, isAdmin]);
 
-  // 찜 상태 로드
+  // 카테고리 이름만 갱신 (대시보드 API 재호출 방지)
+  useEffect(() => {
+    if (categoryMap.size === 0) return;
+    setData((prev) => remapDashboardCategories(prev, categoryMap));
+  }, [categoryMap]);
+
+  // 찜 상태 로드 (일괄 API 1회)
   useEffect(() => {
     const loadFavoriteStatus = async () => {
+      const allDocIds = [
+        ...data.pendingDocuments.map(d => d.id),
+        ...data.workingDocuments.map(d => d.id),
+        ...(data.approvedDocuments || []).map(d => d.id),
+        ...(data.rejectedDocuments || []).map(d => d.id),
+        ...(data.latestReviewDocument ? [data.latestReviewDocument.id] : []),
+      ];
+      if (allDocIds.length === 0) {
+        setFavoriteStatus(new Map());
+        return;
+      }
       try {
-        const allDocIds = [
-          ...data.pendingDocuments.map(d => d.id),
-          ...data.workingDocuments.map(d => d.id),
-          ...(data.approvedDocuments || []).map(d => d.id),
-          ...(data.rejectedDocuments || []).map(d => d.id),
-          ...(data.latestReviewDocument ? [data.latestReviewDocument.id] : []),
-        ];
+        const favoriteIds = await documentApi.getFavoriteBulkStatus(allDocIds);
+        const favoriteSet = new Set(favoriteIds);
         const favoriteMap = new Map<number, boolean>();
-        await Promise.all(
-          allDocIds.map(async (docId) => {
-            try {
-              const isFavorite = await documentApi.isFavorite(docId);
-              favoriteMap.set(docId, isFavorite);
-            } catch (error) {
-              console.warn(`문서 ${docId}의 찜 상태를 가져올 수 없습니다:`, error);
-              favoriteMap.set(docId, false);
-            }
-          })
-        );
+        for (const docId of allDocIds) {
+          favoriteMap.set(docId, favoriteSet.has(docId));
+        }
         setFavoriteStatus(favoriteMap);
       } catch (error) {
         console.error('찜 상태 로드 실패:', error);
