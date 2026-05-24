@@ -39,7 +39,7 @@ import {
 	splitCategoryName,
 	uniqueSortedMajorNames,
 } from "../utils/categoryHierarchy";
-import { useMyInTranslationBySourceId } from "../hooks/useMyInTranslationBySourceId";
+import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
 
 function documentMatchesStatusFilter(
 	status: DocumentState | string | null | undefined,
@@ -92,6 +92,16 @@ function compareDocumentsForSort(
 	return compareByCreatedAtThenId(a, b);
 }
 
+function calculateProgress(
+	completedParagraphs: number[] | undefined,
+	totalParagraphs: number,
+): number {
+	if (!completedParagraphs || completedParagraphs.length === 0 || totalParagraphs === 0) {
+		return 0;
+	}
+	return Math.round((completedParagraphs.length / totalParagraphs) * 100);
+}
+
 function getSourceLabel(originalUrl?: string): string | null {
 	if (!originalUrl) return null;
 	try {
@@ -125,7 +135,7 @@ const convertToDocumentListItem = (
     category,
     categoryId: doc.categoryId,
     estimatedLength: doc.estimatedLength,
-		progress: doc.status === "APPROVED" ? 100 : 0,
+		progress: doc.status === "APPROVED" || doc.status === "PUBLISHED" ? 100 : 0,
 		deadline: "정보 없음",
     priority: Priority.MEDIUM,
     status: doc.status as DocumentState,
@@ -231,17 +241,11 @@ export default function TranslationsFavorites() {
 	const [categoryMap, setCategoryMap] = useState<Map<number, string>>(
 		new Map(),
 	);
-	const [generatedCopyCountBySourceId, setGeneratedCopyCountBySourceId] =
-		useState<Map<number, number>>(() => new Map());
 	const [startTranslationLoading, setStartTranslationLoading] = useState(false);
 	const [continueTranslationLoading, setContinueTranslationLoading] =
 		useState(false);
 
-	const myInTranslationBySourceId = useMyInTranslationBySourceId(
-		sourceDocuments,
-		user?.id,
-	);
-
+	const completedParagraphsByDocIdRef = useRef<Map<number, number[]>>(new Map());
 	const copiesBySourceIdRef = useRef<Map<number, RowItem[]>>(new Map());
 	useEffect(() => {
 		copiesBySourceIdRef.current = copiesBySourceId;
@@ -262,33 +266,6 @@ export default function TranslationsFavorites() {
     };
     loadCategories();
   }, []);
-
-	const enrichFavoriteSource = useCallback(
-		async (doc: DocumentResponse, map: Map<number, string>) => {
-			const base = convertToDocumentListItem(doc, map);
-			if (user?.id && base.status === DocumentState.IN_TRANSLATION) {
-				try {
-					const lockStatus = await translationWorkApi.getLockStatus(base.id);
-					if (!lockStatus?.lockedBy) return base;
-                const lockedById = lockStatus.lockedBy.id;
-					const isMyLock =
-						lockStatus.locked &&
-						lockStatus.canEdit &&
-						lockedById !== undefined &&
-						Number(lockedById) === Number(user.id);
-                return {
-						...base,
-                  currentWorker: lockStatus.lockedBy.name,
-                  isMyLock,
-                };
-              } catch {
-					return base;
-				}
-			}
-			return base;
-		},
-		[user?.id],
-	);
 
 	const mapCopiesResponseToListItems = useCallback(
 		(docs: DocumentResponse[]): RowItem[] => {
@@ -336,6 +313,14 @@ export default function TranslationsFavorites() {
 			const response = await documentApi.getFavoriteDocuments();
 			const favoritedIds = new Set(response.map((d) => d.id));
 
+			const completedMap = new Map<number, number[]>();
+			for (const doc of response) {
+				if (doc.completedParagraphs?.length) {
+					completedMap.set(doc.id, doc.completedParagraphs);
+				}
+			}
+			completedParagraphsByDocIdRef.current = completedMap;
+
 			const uniqueSourceIds = new Set<number>();
 			for (const d of response) {
 				if (d.sourceDocumentId != null) {
@@ -346,23 +331,37 @@ export default function TranslationsFavorites() {
 			}
 			const ids = [...uniqueSourceIds];
 
-			const sources = await Promise.all(
-				ids.map((id) => documentApi.getDocument(id)),
-			);
-			const enrichedSources = await Promise.all(
-				sources.map((doc) => enrichFavoriteSource(doc, categoryMap)),
-			);
-
-			const copiesArrays = await Promise.all(
-				ids.map((sid) => documentApi.getCopiesBySourceId(sid)),
-			);
-			const nextCopies = new Map<number, RowItem[]>();
-			ids.forEach((sid, i) => {
-				nextCopies.set(sid, mapCopiesResponseToListItems(copiesArrays[i]));
-			});
+			const sourceResponses = await documentApi.getDocumentsByIds(ids);
+			const sourceById = new Map(sourceResponses.map((d) => [d.id, d]));
+			const enrichedSources = ids
+				.map((id) => sourceById.get(id))
+				.filter((doc): doc is DocumentResponse => doc != null)
+				.map((doc) => {
+					const item = convertToDocumentListItem(doc, categoryMap);
+					if (
+						["PENDING_REVIEW", "APPROVED", "PUBLISHED"].includes(doc.status) &&
+						doc.lastModifiedBy?.name
+					) {
+						item.currentWorker = doc.lastModifiedBy.name;
+					} else if (doc.status === "IN_TRANSLATION" && doc.createdBy?.name) {
+						item.currentWorker = doc.createdBy.name;
+					}
+					if (doc.currentVersionId) item.currentVersionId = doc.currentVersionId;
+					if (doc.currentVersionNumber != null)
+						item.currentVersionNumber = doc.currentVersionNumber;
+					if (doc.userFacingVersionNumber != null)
+						item.userFacingVersionNumber = doc.userFacingVersionNumber;
+					if (doc.currentVersionIsFinal != null) item.isFinal = doc.currentVersionIsFinal;
+					if (doc.adminTranslationSessionActive != null)
+						item.adminTranslationSessionActive = doc.adminTranslationSessionActive;
+					if (doc.adminSessionCopyDocumentId != null)
+						item.adminSessionCopyDocumentId = doc.adminSessionCopyDocumentId;
+					if (doc.adminSessionUser) item.adminSessionUser = doc.adminSessionUser;
+					return item;
+				});
 
 			setSourceDocuments(enrichedSources);
-			setCopiesBySourceId(nextCopies);
+			setCopiesBySourceId(new Map());
 			setFavoritedDocumentIds(favoritedIds);
 			setExpandedSourceIds(new Set());
 		} catch (err) {
@@ -380,16 +379,31 @@ export default function TranslationsFavorites() {
       } finally {
         setLoading(false);
       }
-	}, [
-		user?.id,
-		categoryMap,
-		enrichFavoriteSource,
-		mapCopiesResponseToListItems,
-	]);
+	}, [user?.id]);
 
 	useEffect(() => {
 		loadFavorites();
 	}, [loadFavorites]);
+
+	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
+	useEffect(() => {
+		if (categoryMap.size === 0) return;
+		const remap = (doc: DocumentListItem): DocumentListItem => ({
+			...doc,
+			category:
+				doc.categoryId != null && categoryMap.has(doc.categoryId)
+					? categoryMap.get(doc.categoryId)!
+					: doc.categoryId != null
+						? `카테고리 ${doc.categoryId}`
+						: "미분류",
+		});
+		setSourceDocuments((prev) => prev.map(remap));
+		setCopiesBySourceId((prev) => {
+			const next = new Map<number, RowItem[]>();
+			for (const [id, rows] of prev) next.set(id, rows.map(remap));
+			return next;
+		});
+	}, [categoryMap]);
 
 	const categoryMajorOptions = useMemo(
 		() => uniqueSortedMajorNames(categoryMap.values()),
@@ -437,43 +451,40 @@ export default function TranslationsFavorites() {
 		return filtered.map((d) => d.id);
 	}, [sourceDocuments, documentMatchesCategoryFilter]);
 
-	const documentIdsKey = useMemo(
-		() => [...documentIdsInCategory].sort((a, b) => a - b).join(","),
-		[documentIdsInCategory],
+	const allSourceIds = useMemo(
+		() => sourceDocuments.map((d) => d.id).filter((id) => !Number.isNaN(id)),
+		[sourceDocuments],
 	);
 
+	const progressDocumentIds = useMemo(
+		() =>
+			sourceDocuments
+				.filter((d) => d.status === DocumentState.IN_TRANSLATION)
+				.map((d) => d.id),
+		[sourceDocuments],
+	);
+
+	const {
+		generatedCopyCountBySourceId,
+		myInTranslationBySourceId,
+		originalParagraphCountByDocumentId,
+	} = useSourceCopyMetadata(allSourceIds, user?.id, progressDocumentIds);
+
 	useEffect(() => {
-		if (!documentIdsKey) return;
-		const ids = documentIdsKey
-			.split(",")
-			.map((s) => Number.parseInt(s, 10))
-			.filter((n) => !Number.isNaN(n));
-		if (ids.length === 0) return;
-		let cancelled = false;
-		(async () => {
-			try {
-				const pairs = await Promise.all(
-					ids.map(async (id) => {
-						try {
-							const copies = await documentApi.getCopiesBySourceId(id);
-							return [id, copies.length] as const;
-						} catch {
-							return [id, 0] as const;
-						}
-					}),
-				);
-				if (cancelled) return;
-				const next = new Map<number, number>();
-				for (const [id, count] of pairs) next.set(id, count);
-				setGeneratedCopyCountBySourceId(next);
-			} catch {
-				if (!cancelled) setGeneratedCopyCountBySourceId(new Map());
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [documentIdsKey]);
+		if (originalParagraphCountByDocumentId.size === 0) return;
+		setSourceDocuments((prev) =>
+			prev.map((doc) => {
+				if (doc.status !== DocumentState.IN_TRANSLATION) return doc;
+				const total = originalParagraphCountByDocumentId.get(doc.id);
+				if (total == null || total <= 0) return doc;
+				const completed = completedParagraphsByDocIdRef.current.get(doc.id);
+				return {
+					...doc,
+					progress: calculateProgress(completed, total),
+				};
+			}),
+		);
+	}, [originalParagraphCountByDocumentId]);
 
 	const categoryFilteredSortedSources = useMemo(() => {
 		const filtered = [...sourceDocuments].filter(documentMatchesCategoryFilter);
