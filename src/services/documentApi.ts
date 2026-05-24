@@ -71,6 +71,30 @@ export interface DocumentResponse {
   publishedAt?: string;
 }
 
+export interface DashboardDocumentCardResponse {
+  id: number;
+  title: string;
+  categoryId?: number;
+  estimatedLength?: number;
+  updatedAt?: string;
+  translatorName?: string;
+  documentStatus?: string;
+  approvedReviewId?: number;
+  publishedUrl?: string;
+  publishStatus?: string;
+  publishError?: string;
+  displayAt?: string;
+}
+
+export interface DashboardSummaryResponse {
+  pendingDocuments: DashboardDocumentCardResponse[];
+  workingDocuments: DashboardDocumentCardResponse[];
+  reviewPendingCount?: number;
+  latestReviewDocument?: DashboardDocumentCardResponse;
+  approvedDocuments?: DashboardDocumentCardResponse[];
+  rejectedDocuments?: DashboardDocumentCardResponse[];
+}
+
 export interface CreateDocumentVersionRequest {
   versionType: 'ORIGINAL' | 'AI_DRAFT' | 'MANUAL_TRANSLATION' | 'FINAL';
   content: string;
@@ -98,6 +122,24 @@ export interface UpdateDocumentRequest {
   categoryId?: number;
   estimatedLength?: number;
   draftData?: string; // 임시저장 데이터 (JSON)
+}
+
+export interface SourceCopySummary {
+  totalCopyCount: number;
+  inTranslationCount: number;
+  workerNames: string[];
+  copyStatuses: string[];
+}
+
+export interface SourceListEnrichmentResponse {
+  copySummaries: Record<string, SourceCopySummary>;
+  myInTranslationSourceIds: number[];
+  originalParagraphCounts: Record<string, number>;
+}
+
+export interface SourceListEnrichmentRequest {
+  sourceDocumentIds: number[];
+  progressDocumentIds?: number[];
 }
 
 export interface DocumentCommentResponse {
@@ -144,6 +186,23 @@ export const documentApi = {
       sourceDocumentIds
     );
     return response.data ?? {};
+  },
+
+  /**
+   * 원문 목록 배치 메타 (복사본 요약·내 IN_TRANSLATION·문단 수)
+   */
+  getSourceListEnrichment: async (
+    request: SourceListEnrichmentRequest,
+  ): Promise<SourceListEnrichmentResponse> => {
+    const response = await apiClient.post<SourceListEnrichmentResponse>(
+      '/documents/source-list-enrichment',
+      request,
+    );
+    return {
+      copySummaries: response.data?.copySummaries ?? {},
+      myInTranslationSourceIds: response.data?.myInTranslationSourceIds ?? [],
+      originalParagraphCounts: response.data?.originalParagraphCounts ?? {},
+    };
   },
 
   /**
@@ -295,6 +354,31 @@ export const documentApi = {
     const queryString = queryParams.toString();
     const url = `/documents${queryString ? `?${queryString}` : ''}`;
     const response = await apiClient.get<DocumentResponse[]>(url);
+    return response.data;
+  },
+
+  /**
+   * 대시보드 요약 (단일 API)
+   */
+  getDashboardSummary: async (): Promise<DashboardSummaryResponse> => {
+    const response = await apiClient.get<DashboardSummaryResponse>('/documents/dashboard-summary');
+    return response.data;
+  },
+
+  /**
+   * 내가 작업 중인 복사본 목록 (경량)
+   */
+  getMyWorkingAssignments: async (): Promise<DocumentResponse[]> => {
+    const response = await apiClient.get<DocumentResponse[]>('/documents/my-working-assignments');
+    return response.data;
+  },
+
+  /**
+   * 문서 id 목록으로 경량 조회 (원문 배치)
+   */
+  getDocumentsByIds: async (documentIds: number[]): Promise<DocumentResponse[]> => {
+    if (documentIds.length === 0) return [];
+    const response = await apiClient.post<DocumentResponse[]>('/documents/list-by-ids', documentIds);
     return response.data;
   },
 
