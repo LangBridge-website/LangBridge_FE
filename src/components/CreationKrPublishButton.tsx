@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from './Button';
-import { CreationKrPublishModal } from './CreationKrPublishModal';
+import { useUser } from '../contexts/UserContext';
+import { isAdminOrAbove } from '../utils/hasAccess';
 import { type ReviewResponse } from '../services/reviewApi';
 
 export type PublishStatus = 'NONE' | 'PENDING' | 'SUCCESS' | 'FAILED' | string | null | undefined;
@@ -19,16 +21,15 @@ interface CreationKrPublishButtonProps {
 
 export const CreationKrPublishButton: React.FC<CreationKrPublishButtonProps> = ({
   reviewId,
-  categoryId,
-  documentTitle,
   publishStatus,
   publishedUrl,
   publishError,
   documentStatus,
-  onSuccess,
   compact = false,
 }) => {
-  const [modalOpen, setModalOpen] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useUser();
+  const canPublish = isAdminOrAbove(user?.roleLevel);
 
   const isPublished =
     documentStatus === 'PUBLISHED' ||
@@ -61,46 +62,39 @@ export const CreationKrPublishButton: React.FC<CreationKrPublishButtonProps> = (
     );
   }
 
-  return (
-    <>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: compact ? 'flex-end' : 'stretch',
-          gap: '4px',
-        }}
-      >
-        <Button
-          variant="primary"
-          onClick={() => setModalOpen(true)}
-          style={{ fontSize: compact ? '11px' : '12px', padding: compact ? '4px 8px' : '6px 12px' }}
-        >
-          {publishStatus === 'FAILED' ? 'creation.kr 재시도' : 'creation.kr 게시'}
-        </Button>
-        {publishStatus === 'FAILED' && publishError && (
-          <span
-            style={{
-              fontSize: '10px',
-              color: '#b91c1c',
-              maxWidth: compact ? '160px' : '240px',
-              textAlign: compact ? 'right' : 'left',
-            }}
-            title={publishError}
-          >
-            {publishError.length > 60 ? `${publishError.slice(0, 60)}…` : publishError}
-          </span>
-        )}
-      </div>
+  if (!canPublish) {
+    return null;
+  }
 
-      <CreationKrPublishModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        reviewId={reviewId}
-        categoryId={categoryId}
-        documentTitle={documentTitle}
-        onSuccess={onSuccess}
-      />
-    </>
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: compact ? 'flex-end' : 'stretch',
+        gap: '4px',
+      }}
+    >
+      <Button
+        variant="primary"
+        onClick={() => navigate(`/reviews/${reviewId}/publish`)}
+        style={{ fontSize: compact ? '11px' : '12px', padding: compact ? '4px 8px' : '6px 12px' }}
+      >
+        {publishStatus === 'FAILED' ? 'creation.kr 재시도' : 'creation.kr 게시'}
+      </Button>
+      {publishStatus === 'FAILED' && publishError && (
+        <span
+          style={{
+            fontSize: '10px',
+            color: '#b91c1c',
+            maxWidth: compact ? '160px' : '240px',
+            textAlign: compact ? 'right' : 'left',
+          }}
+          title={publishError}
+        >
+          {publishError.length > 60 ? `${publishError.slice(0, 60)}…` : publishError}
+        </span>
+      )}
+    </div>
   );
 };

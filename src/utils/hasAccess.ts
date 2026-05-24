@@ -17,6 +17,11 @@ export const roleLevelToRole = (roleLevel: number): UserRole => {
   }
 };
 
+/** 중간관리자(2) 또는 최고관리자(1) 여부 */
+export const isAdminOrAbove = (roleLevel: number | undefined | null): boolean => {
+  return roleLevel != null && roleLevel <= 2;
+};
+
 /**
  * 사용자가 특정 역할을 가지고 있는지 확인
  */

@@ -4,6 +4,8 @@ import { colors } from '../constants/designTokens';
 import { publishApi, type CreationKrBoardOption } from '../services/publishApi';
 import { reviewApi, type ReviewResponse } from '../services/reviewApi';
 
+import { groupBoardsByMajor } from '../utils/publishBoardUtils';
+
 interface CreationKrPublishModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -11,17 +13,6 @@ interface CreationKrPublishModalProps {
   categoryId?: number;
   documentTitle?: string;
   onSuccess?: (response: ReviewResponse) => void;
-}
-
-function groupBoardsByMajor(boards: CreationKrBoardOption[]): Map<string, CreationKrBoardOption[]> {
-  const groups = new Map<string, CreationKrBoardOption[]>();
-  for (const board of boards) {
-    const major = board.majorCategory || '기타';
-    const list = groups.get(major) ?? [];
-    list.push(board);
-    groups.set(major, list);
-  }
-  return groups;
 }
 
 export const CreationKrPublishModal: React.FC<CreationKrPublishModalProps> = ({

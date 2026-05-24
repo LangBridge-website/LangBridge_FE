@@ -36,6 +36,22 @@ export interface ReviewResponse {
   updatedAt: string;
 }
 
+export interface PublishPreviewResponse {
+  reviewId: number;
+  documentId: number;
+  title: string;
+  sanitizedHtml: string;
+  originalUrl?: string;
+  categoryId?: number;
+  reviewStatus: string;
+  documentStatus: string;
+  publishStatus?: string;
+  publishedUrl?: string;
+  publishError?: string;
+  isComplete?: boolean;
+  publishable: boolean;
+}
+
 export interface CreateReviewRequest {
   documentId: number;
   documentVersionId: number;
@@ -115,6 +131,14 @@ export const reviewApi = {
    */
   rejectReview: async (id: number): Promise<ReviewResponse> => {
     const response = await apiClient.post<ReviewResponse>(`/reviews/${id}/reject`);
+    return response.data;
+  },
+
+  /**
+   * creation.kr 게시 미리보기
+   */
+  getPublishPreview: async (id: number): Promise<PublishPreviewResponse> => {
+    const response = await apiClient.get<PublishPreviewResponse>(`/reviews/${id}/publish-preview`);
     return response.data;
   },
 
