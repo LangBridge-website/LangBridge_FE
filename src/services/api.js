@@ -14,34 +14,25 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-    
-    // 토큰 디코딩하여 roleLevel 확인 (디버깅용)
-    if (token) {
+
+    if (import.meta.env.DEV && token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         console.log('🔑 API 요청:', {
           url: config.url,
           method: config.method,
-          hasToken: true,
           userId: payload.userId,
           roleLevel: payload.roleLevel,
-          email: payload.email,
         });
-      } catch (e) {
-        console.log('🔑 API 요청:', {
-          url: config.url,
-          method: config.method,
-          hasToken: true,
-          token: `${token.substring(0, 20)}...`,
-        });
+      } catch {
+        // ignore decode errors
       }
-    } else {
+    } else if (import.meta.env.DEV && !token) {
       console.warn('⚠️ localStorage에 token이 없습니다!');
     }
-    
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('✅ Authorization 헤더 추가됨');
     }
     return config;
   },

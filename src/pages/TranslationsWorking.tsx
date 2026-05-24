@@ -42,7 +42,7 @@ import {
 	splitCategoryName,
 	uniqueSortedMajorNames,
 } from "../utils/categoryHierarchy";
-import { useMyInTranslationBySourceId } from "../hooks/useMyInTranslationBySourceId";
+import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
 
 /** 내가 작업 중: 초안(PENDING_TRANSLATION) 필터 칩 제외 — 목록에도 해당 상태 없음 */
 const WORKING_PAGE_STATUS_FILTER_ORDER = DOCUMENT_STATUS_ORDER.filter(
@@ -118,6 +118,16 @@ function compareDocumentsForSort(
 	}
 	if (primary !== 0) return primary;
 	return compareByCreatedAtThenId(a, b);
+}
+
+function calculateProgress(
+	completedParagraphs: number[] | undefined,
+	totalParagraphs: number,
+): number {
+	if (!completedParagraphs || completedParagraphs.length === 0 || totalParagraphs === 0) {
+		return 0;
+	}
+	return Math.round((completedParagraphs.length / totalParagraphs) * 100);
 }
 
 function getSourceLabel(originalUrl?: string): string | null {
@@ -326,17 +336,11 @@ export default function TranslationsWorking() {
 		order: "asc",
 	});
 	const [selectedStatuses, setSelectedStatuses] = useState<DocumentState[]>([]);
-	const [generatedCopyCountBySourceId, setGeneratedCopyCountBySourceId] =
-		useState<Map<number, number>>(() => new Map());
 	const [startTranslationLoading, setStartTranslationLoading] = useState(false);
 	const [continueTranslationLoading, setContinueTranslationLoading] =
 		useState(false);
 
-	const myInTranslationBySourceId = useMyInTranslationBySourceId(
-		sourceDocuments,
-		user?.id,
-	);
-
+	const completedParagraphsByDocIdRef = useRef<Map<number, number[]>>(new Map());
 	const copiesBySourceIdRef = useRef<Map<number, WorkingRowItem[]>>(new Map());
 
 	// 예전에 초안 필터가 저장돼 있으면 제거
@@ -346,7 +350,7 @@ export default function TranslationsWorking() {
 		);
 	}, []);
 
-	// 카테고리 맵 (번역 대기 문서 페이지와 동일)
+	// 카테고리 맵
 	useEffect(() => {
 		const loadCategories = async () => {
 			try {
@@ -362,48 +366,6 @@ export default function TranslationsWorking() {
 		};
 		loadCategories();
 	}, []);
-
-	const enrichSourceDocument = useCallback(
-		async (doc: DocumentResponse, map: Map<number, string>) => {
-			let originalVersion: DocumentVersionResponse | null = null;
-			let currentVersionNumber: number | null = null;
-			let userFacingVersionNumber: number | null =
-				doc.userFacingVersionNumber ?? null;
-			try {
-				const versions = await documentApi.getDocumentVersions(doc.id);
-				originalVersion =
-					versions.find((v) => v.versionType === "ORIGINAL") || null;
-				if (doc.currentVersionId) {
-					const currentVer = versions.find(
-						(v) => v.id === doc.currentVersionId,
-					);
-					currentVersionNumber = currentVer?.versionNumber ?? null;
-					if (currentVer) {
-						userFacingVersionNumber =
-							currentVer.versionType === "ORIGINAL"
-								? 1
-								: currentVer.versionNumber;
-					}
-				}
-			} catch {
-				// ignore
-			}
-			const lockStatus: LockStatusResponse = {
-				locked: false,
-				canEdit: true,
-				completedParagraphs: doc.completedParagraphs ?? [],
-			};
-			return convertToDocumentListItem(
-				doc,
-				map,
-				lockStatus,
-				originalVersion,
-				currentVersionNumber,
-				userFacingVersionNumber,
-			);
-		},
-		[],
-	);
 
 	const mapCopiesResponseToListItems = useCallback(
 		(docs: DocumentResponse[]): WorkingRowItem[] => {
@@ -441,8 +403,10 @@ export default function TranslationsWorking() {
 		[categoryMap],
 	);
 
-	// API: 내 작업 복사본 → 원문 id 수집 → 원문·해당 원문의 모든 복사본 로드 (번역 대기 목록과 동일 트리)
+	// API: 내 작업 복사본 → 원문 id 수집 → 원문만 로드 (복사본은 펼칠 때 lazy)
 	useEffect(() => {
+		let cancelled = false;
+
 		const fetchDocuments = async () => {
 			if (!user?.id) {
 				setLoading(false);
@@ -452,30 +416,19 @@ export default function TranslationsWorking() {
 			try {
 				setLoading(true);
 				setError(null);
-				console.log("📋 내가 작업 중인 문서 조회 시작...");
 
-				const [inTranslation, pendingReview, approved, published] =
-					await Promise.all([
-						documentApi.getAllDocuments({ status: "IN_TRANSLATION" }),
-						documentApi.getAllDocuments({ status: "PENDING_REVIEW" }),
-						documentApi.getAllDocuments({ status: "APPROVED" }),
-						documentApi.getAllDocuments({ status: "PUBLISHED" }),
-					]);
-				const allDocuments = [
-					...inTranslation,
-					...pendingReview,
-					...approved,
-					...published,
-				];
-				const map = categoryMap;
-
-				const myId = user?.id;
-				const myWorkingDocs =
-					myId != null
-						? allDocuments.filter((doc) => isMyWorkingAssignment(doc, myId))
-						: [];
+				const myWorkingDocs = await documentApi.getMyWorkingAssignments();
+				if (cancelled) return;
 
 				setWorkingCopyIds(new Set(myWorkingDocs.map((d) => d.id)));
+
+				const completedMap = new Map<number, number[]>();
+				for (const doc of myWorkingDocs) {
+					if (doc.completedParagraphs?.length) {
+						completedMap.set(doc.id, doc.completedParagraphs);
+					}
+				}
+				completedParagraphsByDocIdRef.current = completedMap;
 
 				const uniqueSourceIds = new Set<number>();
 				for (const d of myWorkingDocs) {
@@ -485,28 +438,44 @@ export default function TranslationsWorking() {
 						uniqueSourceIds.add(Number(d.id));
 					}
 				}
-
 				const ids = [...uniqueSourceIds];
 
-				const sources = await Promise.all(
-					ids.map(async (sourceId) => {
-						const doc = await documentApi.getDocument(sourceId);
-						return enrichSourceDocument(doc, map);
-					}),
-				);
+				const sourceResponses = await documentApi.getDocumentsByIds(ids);
+				if (cancelled) return;
 
-				const copiesArrays = await Promise.all(
-					ids.map((sid) => documentApi.getCopiesBySourceId(sid)),
-				);
-				const nextCopies = new Map<number, WorkingRowItem[]>();
-				ids.forEach((sid, i) => {
-					nextCopies.set(sid, mapCopiesResponseToListItems(copiesArrays[i]));
-				});
+				const sourceById = new Map(sourceResponses.map((d) => [d.id, d]));
+				const sources = ids
+					.map((id) => sourceById.get(id))
+					.filter((doc): doc is DocumentResponse => doc != null)
+					.map((doc) => {
+						const item = convertToDocumentListItem(doc, categoryMap);
+						if (
+							["PENDING_REVIEW", "APPROVED", "PUBLISHED"].includes(doc.status) &&
+							doc.lastModifiedBy?.name
+						) {
+							item.currentWorker = doc.lastModifiedBy.name;
+						} else if (doc.status === "IN_TRANSLATION" && doc.createdBy?.name) {
+							item.currentWorker = doc.createdBy.name;
+						}
+						if (doc.currentVersionId) item.currentVersionId = doc.currentVersionId;
+						if (doc.currentVersionNumber != null)
+							item.currentVersionNumber = doc.currentVersionNumber;
+						if (doc.userFacingVersionNumber != null)
+							item.userFacingVersionNumber = doc.userFacingVersionNumber;
+						if (doc.currentVersionIsFinal != null) item.isFinal = doc.currentVersionIsFinal;
+						if (doc.adminTranslationSessionActive != null)
+							item.adminTranslationSessionActive = doc.adminTranslationSessionActive;
+						if (doc.adminSessionCopyDocumentId != null)
+							item.adminSessionCopyDocumentId = doc.adminSessionCopyDocumentId;
+						if (doc.adminSessionUser) item.adminSessionUser = doc.adminSessionUser;
+						return item;
+					});
 
 				setSourceDocuments(sources);
-				setCopiesBySourceId(nextCopies);
+				setCopiesBySourceId(new Map());
 				setExpandedSourceIds(new Set());
 			} catch (err) {
+				if (cancelled) return;
 				console.error("❌ 문서 목록 조회 실패:", err);
 				setError(
 					err instanceof Error
@@ -517,17 +486,35 @@ export default function TranslationsWorking() {
 				setCopiesBySourceId(new Map());
 				setWorkingCopyIds(new Set());
 			} finally {
-				setLoading(false);
+				if (!cancelled) setLoading(false);
 			}
 		};
 
-		if (user) {
-			fetchDocuments();
-		} else {
-			setLoading(false);
-			setError("로그인이 필요합니다.");
-		}
-	}, [user, categoryMap, enrichSourceDocument, mapCopiesResponseToListItems]);
+		fetchDocuments();
+		return () => {
+			cancelled = true;
+		};
+	}, [user?.id]);
+
+	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
+	useEffect(() => {
+		if (categoryMap.size === 0) return;
+		const remap = (doc: DocumentListItem): DocumentListItem => ({
+			...doc,
+			category:
+				doc.categoryId != null && categoryMap.has(doc.categoryId)
+					? categoryMap.get(doc.categoryId)!
+					: doc.categoryId != null
+						? `카테고리 ${doc.categoryId}`
+						: "미분류",
+		});
+		setSourceDocuments((prev) => prev.map(remap));
+		setCopiesBySourceId((prev) => {
+			const next = new Map<number, WorkingRowItem[]>();
+			for (const [id, rows] of prev) next.set(id, rows.map(remap));
+			return next;
+		});
+	}, [categoryMap]);
 
 	const categoryMajorOptions = useMemo(
 		() => uniqueSortedMajorNames(categoryMap.values()),
@@ -575,47 +562,44 @@ export default function TranslationsWorking() {
 		return filtered.map((d) => d.id);
 	}, [sourceDocuments, documentMatchesCategoryFilter]);
 
-	const documentIdsKey = useMemo(
-		() => [...documentIdsInCategory].sort((a, b) => a - b).join(","),
-		[documentIdsInCategory],
-	);
-
-	useEffect(() => {
-		if (!documentIdsKey) return;
-		const ids = documentIdsKey
-			.split(",")
-			.map((s) => Number.parseInt(s, 10))
-			.filter((n) => !Number.isNaN(n));
-		if (ids.length === 0) return;
-		let cancelled = false;
-		(async () => {
-			try {
-				const pairs = await Promise.all(
-					ids.map(async (id) => {
-						try {
-							const copies = await documentApi.getCopiesBySourceId(id);
-							return [id, copies.length] as const;
-						} catch {
-							return [id, 0] as const;
-						}
-					}),
-				);
-				if (cancelled) return;
-				const next = new Map<number, number>();
-				for (const [id, count] of pairs) next.set(id, count);
-				setGeneratedCopyCountBySourceId(next);
-			} catch {
-				if (!cancelled) setGeneratedCopyCountBySourceId(new Map());
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [documentIdsKey]);
-
 	useEffect(() => {
 		copiesBySourceIdRef.current = copiesBySourceId;
 	}, [copiesBySourceId]);
+
+	const allSourceIds = useMemo(
+		() => sourceDocuments.map((d) => d.id).filter((id) => !Number.isNaN(id)),
+		[sourceDocuments],
+	);
+
+	const progressDocumentIds = useMemo(
+		() =>
+			sourceDocuments
+				.filter((d) => d.status === DocumentState.IN_TRANSLATION)
+				.map((d) => d.id),
+		[sourceDocuments],
+	);
+
+	const {
+		generatedCopyCountBySourceId,
+		myInTranslationBySourceId,
+		originalParagraphCountByDocumentId,
+	} = useSourceCopyMetadata(allSourceIds, user?.id, progressDocumentIds);
+
+	useEffect(() => {
+		if (originalParagraphCountByDocumentId.size === 0) return;
+		setSourceDocuments((prev) =>
+			prev.map((doc) => {
+				if (doc.status !== DocumentState.IN_TRANSLATION) return doc;
+				const total = originalParagraphCountByDocumentId.get(doc.id);
+				if (total == null || total <= 0) return doc;
+				const completed = completedParagraphsByDocIdRef.current.get(doc.id);
+				return {
+					...doc,
+					progress: calculateProgress(completed, total),
+				};
+			}),
+		);
+	}, [originalParagraphCountByDocumentId]);
 
 	const categoryFilteredSortedSources = useMemo(() => {
 		const filtered = [...sourceDocuments].filter(documentMatchesCategoryFilter);

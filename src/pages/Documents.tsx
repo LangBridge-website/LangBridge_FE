@@ -24,7 +24,7 @@ import {
 	formatLastModifiedDate,
 	formatLastModifiedDateDisplay,
 } from "../utils/dateUtils";
-import { useMyInTranslationBySourceId } from "../hooks/useMyInTranslationBySourceId";
+import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
 
 function isLockOld(lockedAt?: string): boolean {
 	if (!lockedAt) return false;
@@ -250,18 +250,6 @@ export default function Documents() {
 	const [loadingCopySourceIds, setLoadingCopySourceIds] = useState<Set<number>>(
 		new Set(),
 	);
-	const [generatedCopyCountBySourceId, setGeneratedCopyCountBySourceId] =
-		useState<Map<number, number>>(new Map());
-	const [
-		inTranslationCopyCountBySourceId,
-		setInTranslationCopyCountBySourceId,
-	] = useState<Map<number, number>>(new Map());
-	const [copyStatusesBySourceId, setCopyStatusesBySourceId] = useState<
-		Map<number, DocumentState[]>
-	>(new Map());
-	const [copyWorkersBySourceId, setCopyWorkersBySourceId] = useState<
-		Map<number, string[]>
-	>(new Map());
 	const [refreshTick, setRefreshTick] = useState(0);
 	const skipLoadingOnceRef = useRef(false);
 	const initializedStatusFromUrlRef = useRef(false);
@@ -358,37 +346,47 @@ export default function Documents() {
 		};
 
 		fetchDocuments();
-	}, [searchTerm, selectedCategory, categoryMap, refreshTick]);
+	}, [searchTerm, refreshTick]);
 
-	// 찜 상태 로드 (락 제거됨)
+	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
 	useEffect(() => {
-		const loadStatuses = async () => {
+		if (categoryMap.size === 0) return;
+		setDocuments((prev) =>
+			prev.map((doc) => ({
+				...doc,
+				category:
+					doc.categoryId != null && categoryMap.has(doc.categoryId)
+						? categoryMap.get(doc.categoryId)!
+						: doc.categoryId != null
+							? `카테고리 ${doc.categoryId}`
+							: "미분류",
+			})),
+		);
+	}, [categoryMap]);
+
+	// 찜 상태 로드 (일괄 API 1회)
+	useEffect(() => {
+		const loadFavoriteStatus = async () => {
+			if (documents.length === 0) {
+				setFavoriteStatus(new Map());
+				return;
+			}
 			try {
+				const ids = documents.map((d) => d.id);
+				const favoriteIds = await documentApi.getFavoriteBulkStatus(ids);
+				const favoriteSet = new Set(favoriteIds);
 				const favoriteMap = new Map<number, boolean>();
-				await Promise.all(
-					documents.map(async (doc) => {
-						try {
-							const isFavorite = await documentApi
-								.isFavorite(doc.id)
-								.catch(() => false);
-							favoriteMap.set(doc.id, isFavorite);
-						} catch (error) {
-							console.warn(
-								`문서 ${doc.id}의 상태를 가져올 수 없습니다:`,
-								error,
-							);
-							favoriteMap.set(doc.id, false);
-						}
-					}),
-				);
+				for (const doc of documents) {
+					favoriteMap.set(doc.id, favoriteSet.has(doc.id));
+				}
 				setFavoriteStatus(favoriteMap);
 				setLockStatuses(new Map());
 			} catch (error) {
-				console.error("상태 로드 실패:", error);
+				console.error("찜 상태 로드 실패:", error);
 			}
 		};
 		if (documents.length > 0) {
-			loadStatuses();
+			loadFavoriteStatus();
 		}
 	}, [documents]);
 
@@ -402,10 +400,21 @@ export default function Documents() {
 		return ordered.filter((v) => set.has(v));
 	}, [documents]);
 
-	const myInTranslationBySourceId = useMyInTranslationBySourceId(
-		documents,
-		user?.id,
+	const sourceIdsForMeta = useMemo(
+		() =>
+			documents
+				.map((d) => Number(d.id))
+				.filter((id) => !Number.isNaN(id)),
+		[documents],
 	);
+
+	const {
+		generatedCopyCountBySourceId,
+		inTranslationCopyCountBySourceId,
+		copyWorkersBySourceId,
+		copyStatusesBySourceId,
+		myInTranslationBySourceId,
+	} = useSourceCopyMetadata(sourceIdsForMeta, user?.id);
 
 	const workerOptions = useMemo(() => {
 		const set = new Set<string>();
@@ -414,90 +423,6 @@ export default function Documents() {
 		}
 		return Array.from(set);
 	}, [copyWorkersBySourceId]);
-
-	const documentIdsKey = useMemo(
-		() =>
-			[...documents]
-				.map((d) => Number(d.id))
-				.filter((id) => !Number.isNaN(id))
-				.sort((a, b) => a - b)
-				.join(","),
-		[documents],
-	);
-
-	useEffect(() => {
-		if (!documentIdsKey) return;
-		const ids = documentIdsKey
-			.split(",")
-			.map((s) => Number.parseInt(s, 10))
-			.filter((n) => !Number.isNaN(n));
-		if (ids.length === 0) return;
-		let cancelled = false;
-		(async () => {
-			try {
-				const pairs = await Promise.all(
-					ids.map(async (id) => {
-						try {
-							const copies = await documentApi.getCopiesBySourceId(id);
-							const inTranslationCount = copies.filter(
-								(copy) => copy.status === "IN_TRANSLATION",
-							).length;
-							const workers = Array.from(
-								new Set(
-									copies
-										.map((copy) => copy.createdBy?.name)
-										.filter((name): name is string => Boolean(name)),
-								),
-							);
-							const copyStatuses = copies.map(
-								(copy) => copy.status as DocumentState,
-							);
-							return [
-								id,
-								copies.length,
-								inTranslationCount,
-								workers,
-								copyStatuses,
-							] as const;
-						} catch {
-							return [id, 0, 0, [] as string[], [] as DocumentState[]] as const;
-						}
-					}),
-				);
-				if (cancelled) return;
-				const next = new Map<number, number>();
-				const inTranslationCountMap = new Map<number, number>();
-				const workerMap = new Map<number, string[]>();
-				const statusMap = new Map<number, DocumentState[]>();
-				for (const [
-					id,
-					count,
-					inTranslationCount,
-					workers,
-					copyStatuses,
-				] of pairs) {
-					next.set(id, count);
-					inTranslationCountMap.set(id, inTranslationCount);
-					workerMap.set(id, workers);
-					statusMap.set(id, copyStatuses);
-				}
-				setGeneratedCopyCountBySourceId(next);
-				setInTranslationCopyCountBySourceId(inTranslationCountMap);
-				setCopyWorkersBySourceId(workerMap);
-				setCopyStatusesBySourceId(statusMap);
-			} catch {
-				if (!cancelled) {
-					setGeneratedCopyCountBySourceId(new Map());
-					setInTranslationCopyCountBySourceId(new Map());
-					setCopyWorkersBySourceId(new Map());
-					setCopyStatusesBySourceId(new Map());
-				}
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [documentIdsKey]);
 
 	// 필터링 및 정렬
 	const filteredAndSortedDocuments = useMemo(() => {
