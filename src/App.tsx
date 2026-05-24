@@ -18,6 +18,7 @@ import TranslationWork from './pages/TranslationWork';
 import TranslationsWorking from './pages/TranslationsWorking';
 import Reviews from './pages/Reviews';
 import DocumentReview from './pages/DocumentReview';
+import CreationKrPublishPreview from './pages/CreationKrPublishPreview';
 import TranslationsFavorites from './pages/TranslationsFavorites';
 import SystemSettings from './pages/SystemSettings';
 import Glossary from './pages/Glossary';
@@ -119,6 +120,11 @@ function App() {
                         <Route path="/reviews/:id/review" element={
                           <ErrorBoundary>
                             <DocumentReview />
+                          </ErrorBoundary>
+                        } />
+                        <Route path="/reviews/:id/publish" element={
+                          <ErrorBoundary>
+                            <CreationKrPublishPreview />
                           </ErrorBoundary>
                         } />
                         <Route path="/inquiries" element={
