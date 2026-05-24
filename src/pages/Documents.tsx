@@ -1,7 +1,7 @@
 import type React from "react";
 import type { CSSProperties } from "react";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Table, type TableColumn } from "../components/Table";
 import { StatusBadge } from "../components/StatusBadge";
@@ -40,6 +40,21 @@ const statuses = [
 	"승인 완료",
 	"게시 완료",
 ];
+
+/** 대시보드 등 ?status= 쿼리 → 상태 칩 라벨 */
+const URL_STATUS_TO_CHIP: Record<string, string> = {
+	APPROVED: "승인 완료",
+	PUBLISHED: "게시 완료",
+	PENDING_REVIEW: "검토 중",
+	IN_TRANSLATION: "번역 중",
+};
+
+/** 원문 목록에서 복사본 status로 판단하는 필터 */
+const COPY_STATUS_FILTER_MAP: Record<string, DocumentState> = {
+	"검토 중": DocumentState.PENDING_REVIEW,
+	"승인 완료": DocumentState.APPROVED,
+	"게시 완료": DocumentState.PUBLISHED,
+};
 
 const statusChipStyles: Record<
 	string,
@@ -182,6 +197,7 @@ const HighlightText: React.FC<{ text: string; searchTerm: string }> = ({
 
 export default function Documents() {
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const { user } = useUser();
 	const [documents, setDocuments] = useState<DocumentListItem[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -240,11 +256,15 @@ export default function Documents() {
 		inTranslationCopyCountBySourceId,
 		setInTranslationCopyCountBySourceId,
 	] = useState<Map<number, number>>(new Map());
+	const [copyStatusesBySourceId, setCopyStatusesBySourceId] = useState<
+		Map<number, DocumentState[]>
+	>(new Map());
 	const [copyWorkersBySourceId, setCopyWorkersBySourceId] = useState<
 		Map<number, string[]>
 	>(new Map());
 	const [refreshTick, setRefreshTick] = useState(0);
 	const skipLoadingOnceRef = useRef(false);
+	const initializedStatusFromUrlRef = useRef(false);
 	const isAdmin =
 		user?.role === UserRole.SUPER_ADMIN || user?.role === UserRole.ADMIN;
 
@@ -273,6 +293,18 @@ export default function Documents() {
 		};
 		fetchCategories();
 	}, []);
+
+	// ?status=APPROVED 등 URL 쿼리 → 상태 필터 초기값
+	useEffect(() => {
+		if (initializedStatusFromUrlRef.current) return;
+		const statusParam = searchParams.get("status");
+		if (!statusParam) return;
+		const chip = URL_STATUS_TO_CHIP[statusParam];
+		if (chip) {
+			setSelectedStatuses([chip]);
+			initializedStatusFromUrlRef.current = true;
+		}
+	}, [searchParams]);
 
 	// API에서 문서 목록 가져오기
 	useEffect(() => {
@@ -417,9 +449,18 @@ export default function Documents() {
 										.filter((name): name is string => Boolean(name)),
 								),
 							);
-							return [id, copies.length, inTranslationCount, workers] as const;
+							const copyStatuses = copies.map(
+								(copy) => copy.status as DocumentState,
+							);
+							return [
+								id,
+								copies.length,
+								inTranslationCount,
+								workers,
+								copyStatuses,
+							] as const;
 						} catch {
-							return [id, 0, 0, [] as string[]] as const;
+							return [id, 0, 0, [] as string[], [] as DocumentState[]] as const;
 						}
 					}),
 				);
@@ -427,19 +468,29 @@ export default function Documents() {
 				const next = new Map<number, number>();
 				const inTranslationCountMap = new Map<number, number>();
 				const workerMap = new Map<number, string[]>();
-				for (const [id, count, inTranslationCount, workers] of pairs) {
+				const statusMap = new Map<number, DocumentState[]>();
+				for (const [
+					id,
+					count,
+					inTranslationCount,
+					workers,
+					copyStatuses,
+				] of pairs) {
 					next.set(id, count);
 					inTranslationCountMap.set(id, inTranslationCount);
 					workerMap.set(id, workers);
+					statusMap.set(id, copyStatuses);
 				}
 				setGeneratedCopyCountBySourceId(next);
 				setInTranslationCopyCountBySourceId(inTranslationCountMap);
 				setCopyWorkersBySourceId(workerMap);
+				setCopyStatusesBySourceId(statusMap);
 			} catch {
 				if (!cancelled) {
 					setGeneratedCopyCountBySourceId(new Map());
 					setInTranslationCopyCountBySourceId(new Map());
 					setCopyWorkersBySourceId(new Map());
+					setCopyStatusesBySourceId(new Map());
 				}
 			}
 		})();
@@ -482,18 +533,18 @@ export default function Documents() {
 							doc.status === DocumentState.DRAFT && doc.hasVersions === false
 						);
 					}
-					const statusMap: Record<string, DocumentState> = {
-						"번역 중": DocumentState.IN_TRANSLATION,
-						"검토 중": DocumentState.PENDING_REVIEW,
-						"승인 완료": DocumentState.APPROVED,
-						"게시 완료": DocumentState.PUBLISHED,
-					};
 					if (st === "번역 중") {
 						return (
 							(inTranslationCopyCountBySourceId.get(Number(doc.id)) ?? 0) > 0
 						);
 					}
-					return doc.status === statusMap[st];
+					const copyTargetStatus = COPY_STATUS_FILTER_MAP[st];
+					if (copyTargetStatus) {
+						const copyStatuses =
+							copyStatusesBySourceId.get(Number(doc.id)) ?? [];
+						return copyStatuses.includes(copyTargetStatus);
+					}
+					return false;
 				});
 			};
 			filtered = filtered.filter(matchesStatus);
@@ -599,6 +650,7 @@ export default function Documents() {
 		sortOption,
 		generatedCopyCountBySourceId,
 		inTranslationCopyCountBySourceId,
+		copyStatusesBySourceId,
 		copyWorkersBySourceId,
 	]);
 
