@@ -19,7 +19,7 @@ const roleLevelMap: Record<number, string> = {
 
 export default function SystemSettings() {
   const { user } = useUser();
-  const [activeTab, setActiveTab] = useState<'users' | 'deepl' | 'category'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'deepl' | 'creation-kr' | 'category'>('users');
 
   // DeepL API 키 관련 상태
   const [apiKey, setApiKey] = useState('');
@@ -28,6 +28,24 @@ export default function SystemSettings() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // creation.kr 계정 관련 상태
+  const [creationKrEmail, setCreationKrEmail] = useState('');
+  const [creationKrPassword, setCreationKrPassword] = useState('');
+  const [showCreationKrPassword, setShowCreationKrPassword] = useState(false);
+  const [hasCreationKrCredentials, setHasCreationKrCredentials] = useState(false);
+  const [maskedCreationKrEmail, setMaskedCreationKrEmail] = useState<string | null>(null);
+  const [creationKrLastUpdated, setCreationKrLastUpdated] = useState<string | null>(null);
+  const [creationKrSaveLoading, setCreationKrSaveLoading] = useState(false);
+  const [creationKrTestLoading, setCreationKrTestLoading] = useState(false);
+  const [creationKrSaveMessage, setCreationKrSaveMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [creationKrTestMessage, setCreationKrTestMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   // 카테고리 관련 상태
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
@@ -59,6 +77,13 @@ export default function SystemSettings() {
   useEffect(() => {
     if (activeTab === 'deepl') {
       fetchApiKeyStatus();
+    }
+  }, [activeTab]);
+
+  // creation.kr 계정 조회
+  useEffect(() => {
+    if (activeTab === 'creation-kr') {
+      fetchCreationKrCredentials();
     }
   }, [activeTab]);
 
@@ -98,6 +123,75 @@ export default function SystemSettings() {
       }
     } catch (error) {
       console.error('API 키 상태 조회 실패:', error);
+    }
+  };
+
+  const fetchCreationKrCredentials = async () => {
+    try {
+      const response = await settingsApi.getCreationKrCredentials();
+      setHasCreationKrCredentials(response.hasCredentials);
+      setMaskedCreationKrEmail(response.email ?? null);
+      if (response.updatedAt) {
+        setCreationKrLastUpdated(new Date(response.updatedAt).toLocaleString('ko-KR'));
+      } else {
+        setCreationKrLastUpdated(null);
+      }
+    } catch (error) {
+      console.error('creation.kr 계정 상태 조회 실패:', error);
+    }
+  };
+
+  const handleSaveCreationKrCredentials = async () => {
+    if (!creationKrEmail.trim()) {
+      setCreationKrSaveMessage({ type: 'error', text: '아이디(이메일)를 입력해주세요.' });
+      return;
+    }
+    if (!creationKrPassword.trim()) {
+      setCreationKrSaveMessage({ type: 'error', text: '비밀번호를 입력해주세요.' });
+      return;
+    }
+
+    try {
+      setCreationKrSaveLoading(true);
+      setCreationKrSaveMessage(null);
+      await settingsApi.saveCreationKrCredentials({
+        email: creationKrEmail.trim(),
+        password: creationKrPassword,
+      });
+      setCreationKrSaveMessage({ type: 'success', text: 'creation.kr 계정이 저장되었습니다.' });
+      setCreationKrPassword('');
+      setShowCreationKrPassword(false);
+      await fetchCreationKrCredentials();
+    } catch (error: unknown) {
+      console.error('creation.kr 계정 저장 실패:', error);
+      const err = error as { response?: { data?: { message?: string } } };
+      setCreationKrSaveMessage({
+        type: 'error',
+        text: err.response?.data?.message || 'creation.kr 계정 저장에 실패했습니다.',
+      });
+    } finally {
+      setCreationKrSaveLoading(false);
+    }
+  };
+
+  const handleTestCreationKrConnection = async () => {
+    try {
+      setCreationKrTestLoading(true);
+      setCreationKrTestMessage(null);
+      const response = await settingsApi.testCreationKrConnection();
+      setCreationKrTestMessage({
+        type: response.success ? 'success' : 'error',
+        text: response.message || (response.success ? '연결 테스트에 성공했습니다.' : '연결 테스트에 실패했습니다.'),
+      });
+    } catch (error: unknown) {
+      console.error('creation.kr 연결 테스트 실패:', error);
+      const err = error as { response?: { data?: { message?: string } } };
+      setCreationKrTestMessage({
+        type: 'error',
+        text: err.response?.data?.message || '연결 테스트 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setCreationKrTestLoading(false);
     }
   };
 
@@ -410,6 +504,23 @@ export default function SystemSettings() {
           DeepL API 키
         </button>
         <button
+          onClick={() => setActiveTab('creation-kr')}
+          style={{
+            padding: '12px 24px',
+            fontSize: '14px',
+            fontWeight: 500,
+            color: activeTab === 'creation-kr' ? colors.accent : colors.secondaryText,
+            backgroundColor: 'transparent',
+            border: 'none',
+            borderBottom:
+              activeTab === 'creation-kr' ? `2px solid ${colors.accent}` : '2px solid transparent',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          creation.kr
+        </button>
+        <button
           onClick={() => setActiveTab('category')}
           style={{
             padding: '12px 24px',
@@ -694,6 +805,201 @@ export default function SystemSettings() {
               <li>API 키는 AES 암호화되어 데이터베이스에 저장됩니다.</li>
               <li>저장된 API 키는 번역 서비스에서만 사용됩니다.</li>
               <li>API 키가 유출되지 않도록 주의해주세요.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* creation.kr 계정 설정 */}
+      {activeTab === 'creation-kr' && (
+        <div
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: '8px',
+            border: `1px solid ${colors.border}`,
+            padding: '24px',
+          }}
+        >
+          <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>creation.kr 계정 설정</h2>
+          <p style={{ fontSize: '13px', color: colors.secondaryText, marginBottom: '24px' }}>
+            승인된 문서를 creation.kr에 자동 게시할 때 사용할 관리자 계정을 등록하세요. 비밀번호는 암호화되어
+            저장되며, 저장 후 다시 조회할 수 없습니다.
+          </p>
+
+          {hasCreationKrCredentials && (
+            <div
+              style={{
+                backgroundColor: '#f0f9ff',
+                border: '1px solid #0284c7',
+                borderRadius: '6px',
+                padding: '12px 16px',
+                marginBottom: '24px',
+                fontSize: '13px',
+                color: '#0c4a6e',
+              }}
+            >
+              ✓ creation.kr 계정이 등록되어 있습니다.
+              {maskedCreationKrEmail && (
+                <span style={{ marginLeft: '8px' }}>아이디: {maskedCreationKrEmail}</span>
+              )}
+              {creationKrLastUpdated && (
+                <span style={{ marginLeft: '8px' }}>최종 업데이트: {creationKrLastUpdated}</span>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginBottom: '16px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 500,
+                marginBottom: '8px',
+                color: colors.primaryText,
+              }}
+            >
+              아이디 (이메일) {hasCreationKrCredentials ? '(변경 시 새 값 입력)' : ''}
+            </label>
+            <input
+              type="email"
+              value={creationKrEmail}
+              onChange={(e) => setCreationKrEmail(e.target.value)}
+              placeholder="publish@example.com"
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                fontSize: '14px',
+                border: `1px solid ${colors.border}`,
+                borderRadius: '6px',
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 500,
+                marginBottom: '8px',
+                color: colors.primaryText,
+              }}
+            >
+              비밀번호 {hasCreationKrCredentials ? '(새 비밀번호로 업데이트)' : ''}
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showCreationKrPassword ? 'text' : 'password'}
+                value={creationKrPassword}
+                onChange={(e) => setCreationKrPassword(e.target.value)}
+                placeholder="creation.kr 로그인 비밀번호"
+                style={{
+                  width: '100%',
+                  padding: '10px 40px 10px 12px',
+                  fontSize: '14px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '6px',
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveCreationKrCredentials();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCreationKrPassword(!showCreationKrPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  color: colors.secondaryText,
+                }}
+                title={showCreationKrPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+              >
+                {showCreationKrPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Button
+              variant="primary"
+              onClick={handleSaveCreationKrCredentials}
+              disabled={
+                creationKrSaveLoading || !creationKrEmail.trim() || !creationKrPassword.trim()
+              }
+              style={{ fontSize: '14px', padding: '10px 20px' }}
+            >
+              {creationKrSaveLoading
+                ? '저장 중...'
+                : hasCreationKrCredentials
+                  ? '계정 업데이트'
+                  : '계정 저장'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleTestCreationKrConnection}
+              disabled={creationKrTestLoading || !hasCreationKrCredentials}
+              style={{ fontSize: '14px', padding: '10px 20px' }}
+            >
+              {creationKrTestLoading ? '테스트 중...' : '연결 테스트'}
+            </Button>
+          </div>
+
+          {creationKrSaveMessage && (
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '12px 16px',
+                borderRadius: '6px',
+                fontSize: '13px',
+                backgroundColor: creationKrSaveMessage.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${creationKrSaveMessage.type === 'success' ? '#22c55e' : '#ef4444'}`,
+                color: creationKrSaveMessage.type === 'success' ? '#15803d' : '#b91c1c',
+              }}
+            >
+              {creationKrSaveMessage.text}
+            </div>
+          )}
+
+          {creationKrTestMessage && (
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '12px 16px',
+                borderRadius: '6px',
+                fontSize: '13px',
+                backgroundColor: creationKrTestMessage.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${creationKrTestMessage.type === 'success' ? '#22c55e' : '#ef4444'}`,
+                color: creationKrTestMessage.type === 'success' ? '#15803d' : '#b91c1c',
+              }}
+            >
+              {creationKrTestMessage.text}
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: '24px',
+              padding: '16px',
+              backgroundColor: '#fef3c7',
+              border: '1px solid #f59e0b',
+              borderRadius: '6px',
+              fontSize: '13px',
+              color: '#92400e',
+            }}
+          >
+            <p style={{ fontWeight: 600, marginBottom: '8px' }}>⚠️ 보안 안내</p>
+            <ul style={{ paddingLeft: '20px', margin: 0 }}>
+              <li>게시 전용 계정 사용을 권장합니다. 개인 관리자 계정은 등록하지 마세요.</li>
+              <li>계정 정보는 AES 암호화되어 데이터베이스에 저장됩니다.</li>
+              <li>연결 테스트는 Playwright로 creation.kr 로그인을 시도합니다 (30~60초 소요).</li>
             </ul>
           </div>
         </div>

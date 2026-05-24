@@ -13,6 +13,7 @@ import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { WysiwygEditor, type EditorMode } from "../components/WysiwygEditor";
 import { documentApi, type DocumentResponse } from "../services/documentApi";
+import { extractPersistableHtmlFromString } from "../utils/htmlContentUtils";
 import { translationApi } from "../services/api";
 import { termApi } from "../services/termApi";
 import {
@@ -8981,8 +8982,9 @@ const NewTranslation: React.FC = () => {
 			// 3. 원문 버전 생성 (선택한 영역)
 			await documentApi.createDocumentVersion(response.id, {
 				versionType: "ORIGINAL",
-				content:
+				content: extractPersistableHtmlFromString(
 					draft.editedHtml || draft.originalHtmlWithIds || draft.originalHtml,
+				),
 				isFinal: false,
 			});
 			console.log("✅ 원문 버전 저장 완료");
@@ -8991,7 +8993,7 @@ const NewTranslation: React.FC = () => {
 			if (draft.translatedHtml) {
 				await documentApi.createDocumentVersion(response.id, {
 					versionType: "AI_DRAFT",
-					content: draft.translatedHtml,
+					content: extractPersistableHtmlFromString(draft.translatedHtml),
 					isFinal: false,
 				});
 				console.log("✅ AI 번역 버전 저장 완료");

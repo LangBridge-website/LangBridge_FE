@@ -20,6 +20,11 @@ import {
 	clearAllHighlights,
 	Paragraph,
 } from "../utils/paragraphUtils";
+import {
+	extractPersistableHtmlFromIframeDoc,
+	extractPersistableHtmlFromString,
+	prepareHtmlForEditorDisplay,
+} from "../utils/htmlContentUtils";
 import ErrorBoundary from "../components/ErrorBoundary";
 import {
 	AlignLeft,
@@ -160,7 +165,7 @@ const removeLegacyGlossaryMarkup = (html: string) => {
 			node.replaceWith(doc.createTextNode(restored));
 		});
 
-		return doc.documentElement.outerHTML;
+		return extractPersistableHtmlFromString(doc.documentElement.outerHTML);
 	} catch {
 		return html;
 	}
@@ -389,7 +394,7 @@ export default function TranslationWork() {
 					if (aiDraftVersion) {
 						// 문단 ID 부여 (iframe 렌더링용)
 						const cleanedAiDraft = removeLegacyGlossaryMarkup(
-							aiDraftVersion.content,
+							prepareHtmlForEditorDisplay(aiDraftVersion.content),
 						);
 						const processedAiDraft = extractParagraphs(
 							cleanedAiDraft,
@@ -415,7 +420,7 @@ export default function TranslationWork() {
 						);
 						// 저장된 번역 HTML에 문단 ID 추가
 						const processedManual = extractParagraphs(
-							manualTranslationVersion.content,
+							prepareHtmlForEditorDisplay(manualTranslationVersion.content),
 							"manual",
 						);
 						setSavedTranslationHtml(processedManual);
@@ -424,7 +429,7 @@ export default function TranslationWork() {
 						console.log("ℹ️ 저장된 번역이 없어 AI 초벌 번역 사용");
 						// MANUAL_TRANSLATION이 없으면 AI_DRAFT를 에디터에 설정 (문단 ID 추가)
 						const cleanedAiDraft = removeLegacyGlossaryMarkup(
-							aiDraftVersion.content,
+							prepareHtmlForEditorDisplay(aiDraftVersion.content),
 						);
 						const processedAiDraft = extractParagraphs(
 							cleanedAiDraft,
@@ -436,7 +441,7 @@ export default function TranslationWork() {
 						console.log("ℹ️ AI 초벌 번역도 없어 원문 사용");
 						// AI_DRAFT도 없으면 ORIGINAL을 기본값으로 (문단 ID 추가)
 						const processedOriginal = extractParagraphs(
-							originalVersion.content,
+							prepareHtmlForEditorDisplay(originalVersion.content),
 							"original-editor",
 						);
 						setSavedTranslationHtml(processedOriginal);
@@ -595,7 +600,7 @@ export default function TranslationWork() {
 		if (iframeDoc) {
 			try {
 				iframeDoc.open();
-				iframeDoc.write(savedTranslationHtml);
+				iframeDoc.write(prepareHtmlForEditorDisplay(savedTranslationHtml));
 				iframeDoc.close();
 
 				// ⭐ 기본 경계선 제거 CSS 주입 (텍스트 편집 모드용)
@@ -1823,7 +1828,7 @@ export default function TranslationWork() {
 			setHandoverSubmitting(true);
 			try {
 				await translationWorkApi.saveTranslation(documentId, {
-					content: savedTranslationHtml,
+					content: extractPersistableHtmlFromString(savedTranslationHtml),
 					completedParagraphs: Array.from(completedParagraphs),
 				});
 			} catch (saveErr: any) {
@@ -1869,7 +1874,7 @@ export default function TranslationWork() {
 
 		try {
 			await translationWorkApi.completeTranslation(documentId, {
-				content: savedTranslationHtml,
+				content: extractPersistableHtmlFromString(savedTranslationHtml),
 				completedParagraphs: Array.from(completedParagraphs),
 			});
 			alert("번역이 완료되었습니다!");
@@ -2233,8 +2238,8 @@ export default function TranslationWork() {
 								if (iframe) {
 									const iframeDoc =
 										iframe.contentDocument || iframe.contentWindow?.document;
-									if (iframeDoc && iframeDoc.documentElement) {
-										contentToSave = iframeDoc.documentElement.outerHTML;
+									if (iframeDoc && iframeDoc.body) {
+										contentToSave = extractPersistableHtmlFromIframeDoc(iframeDoc);
 										console.log(
 											"💾 iframe에서 최신 HTML 추출:",
 											contentToSave.substring(0, 100) + "...",
@@ -3973,7 +3978,7 @@ export default function TranslationWork() {
 												{/* iframe 에디터 */}
 												<iframe
 													ref={myTranslationIframeRef}
-													srcDoc={savedTranslationHtml}
+													srcDoc={prepareHtmlForEditorDisplay(savedTranslationHtml)}
 													style={{
 														flex: 1,
 														width: "100%",

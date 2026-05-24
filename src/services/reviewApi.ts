@@ -1,4 +1,5 @@
 import apiClient from './api';
+import axios from 'axios';
 
 export interface ReviewResponse {
   id: number;
@@ -27,9 +28,28 @@ export interface ReviewResponse {
   reviewedAt?: string;
   finalApprovalAt?: string;
   publishedAt?: string;
+  publishedUrl?: string;
+  publishStatus?: 'NONE' | 'PENDING' | 'SUCCESS' | 'FAILED' | string;
+  publishError?: string;
   isComplete?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PublishPreviewResponse {
+  reviewId: number;
+  documentId: number;
+  title: string;
+  sanitizedHtml: string;
+  originalUrl?: string;
+  categoryId?: number;
+  reviewStatus: string;
+  documentStatus: string;
+  publishStatus?: string;
+  publishedUrl?: string;
+  publishError?: string;
+  isComplete?: boolean;
+  publishable: boolean;
 }
 
 export interface CreateReviewRequest {
@@ -115,11 +135,35 @@ export const reviewApi = {
   },
 
   /**
-   * 리뷰 게시
+   * creation.kr 게시 미리보기
    */
-  publishReview: async (id: number): Promise<ReviewResponse> => {
-    const response = await apiClient.post<ReviewResponse>(`/reviews/${id}/publish`);
+  getPublishPreview: async (id: number): Promise<PublishPreviewResponse> => {
+    const response = await apiClient.get<PublishPreviewResponse>(`/reviews/${id}/publish-preview`);
     return response.data;
+  },
+
+  /**
+   * 리뷰 게시 (creation.kr — 게시판 선택 optional)
+   */
+  publishReview: async (
+    id: number,
+    request?: { sitePath: string; boardId: string },
+  ): Promise<ReviewResponse> => {
+    try {
+      const response = await apiClient.post<ReviewResponse>(
+        `/reviews/${id}/publish`,
+        request ?? {},
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data && typeof error.response.data === 'object') {
+        const data = error.response.data as ReviewResponse;
+        if (data.id != null) {
+          return data;
+        }
+      }
+      throw error;
+    }
   },
 };
 
