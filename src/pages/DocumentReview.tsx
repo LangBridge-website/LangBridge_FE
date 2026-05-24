@@ -1468,7 +1468,8 @@ export default function DocumentReview() {
 							/>
 						)}
 
-					{document.status === "PENDING_REVIEW" && review?.status === "PENDING" && (
+					{document.status === "PENDING_REVIEW" &&
+						(!review || review.status === "PENDING") && (
 						<>
 							<Button
 								variant="secondary"
