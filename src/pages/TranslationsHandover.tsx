@@ -104,25 +104,37 @@ export default function TranslationsHandover() {
     {
       key: 'title',
       label: '문서 제목',
-      width: '22%',
+      width: 'minmax(12rem, 2.2fr)',
       render: (item) => (
-        <span style={{ fontWeight: 500, color: '#000000' }}>{item.title}</span>
+        <span
+          style={{
+            fontWeight: 500,
+            color: '#000000',
+            wordBreak: 'break-word',
+            lineHeight: 1.4,
+          }}
+        >
+          {item.title}
+        </span>
       ),
     },
     {
       key: 'status',
       label: '상태',
-      width: '9%',
+      width: 'minmax(5.5rem, 0.45fr)',
       render: () => (
-        <span style={{
-          display: 'inline-block',
-          padding: '2px 8px',
-          borderRadius: '4px',
-          fontSize: '11px',
-          fontWeight: 500,
-          backgroundColor: '#E8F0E8',
-          color: '#2E7D32',
-        }}>
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: 500,
+            backgroundColor: '#E8F0E8',
+            color: '#2E7D32',
+            whiteSpace: 'nowrap',
+          }}
+        >
           인계 요청
         </span>
       ),
@@ -130,17 +142,32 @@ export default function TranslationsHandover() {
     {
       key: 'category',
       label: '카테고리',
-      width: '8%',
+      width: 'minmax(5.5rem, 0.7fr)',
       render: (item) => (
-        <span style={{ fontSize: '12px', color: colors.primaryText }}>{item.category}</span>
+        <span
+          style={{
+            fontSize: '12px',
+            color: colors.primaryText,
+            wordBreak: 'break-word',
+            lineHeight: 1.4,
+          }}
+        >
+          {item.category}
+        </span>
       ),
     },
     {
       key: 'handoverByName',
       label: '인계자',
-      width: '9%',
+      width: 'minmax(5.5rem, 0.65fr)',
       render: (item) => (
-        <span style={{ fontSize: '12px', color: colors.primaryText }}>
+        <span
+          style={{
+            fontSize: '12px',
+            color: colors.primaryText,
+            whiteSpace: 'nowrap',
+          }}
+        >
           {item.handoverByName || '-'}
         </span>
       ),
@@ -148,10 +175,16 @@ export default function TranslationsHandover() {
     {
       key: 'handoverAt',
       label: '인계 시각',
-      width: '12%',
+      width: 'minmax(8.5rem, 0.75fr)',
       align: 'right',
       render: (item) => (
-        <span style={{ fontSize: '12px', color: colors.primaryText }}>
+        <span
+          style={{
+            fontSize: '12px',
+            color: colors.primaryText,
+            whiteSpace: 'nowrap',
+          }}
+        >
           {formatLastModifiedDateDisplay(item.handoverAt)}
         </span>
       ),
@@ -159,7 +192,7 @@ export default function TranslationsHandover() {
     {
       key: 'handoverMemo',
       label: '인계 메모',
-      width: '25%',
+      width: 'minmax(10rem, 1.5fr)',
       render: (item) => (
         <span
           style={{
@@ -170,6 +203,7 @@ export default function TranslationsHandover() {
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
             lineHeight: '1.4',
+            wordBreak: 'break-word',
           }}
         >
           {item.handoverMemo}
@@ -179,17 +213,26 @@ export default function TranslationsHandover() {
     {
       key: 'action',
       label: '액션',
-      width: '17%',
+      width: 'minmax(12.5rem, max-content)',
       align: 'right',
+      cellStyle: { overflow: 'visible' },
       render: (item) => (
-        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            gap: '6px',
+            justifyContent: 'flex-end',
+            flexShrink: 0,
+          }}
+        >
           <Button
             variant="secondary"
             onClick={(e) => {
               if (e) e.stopPropagation();
               navigate(`/documents/${item.id}?from=handover`);
             }}
-            style={{ fontSize: '12px', padding: '6px 12px' }}
+            style={{ fontSize: '12px', padding: '6px 12px', flexShrink: 0 }}
           >
             상세보기
           </Button>
@@ -199,7 +242,7 @@ export default function TranslationsHandover() {
               if (e) e.stopPropagation();
               setHandoverMemoModalDoc(item);
             }}
-            style={{ fontSize: '12px', padding: '6px 12px' }}
+            style={{ fontSize: '12px', padding: '6px 12px', flexShrink: 0 }}
           >
             이어받기
           </Button>
@@ -241,6 +284,9 @@ export default function TranslationsHandover() {
           <Table
             columns={columns}
             data={documents}
+            columnGap="0.75rem"
+            headerPadding="0.75rem 1rem"
+            rowPadding="0.75rem 1rem"
             onRowClick={(item) => navigate(`/documents/${item.id}?from=handover`)}
           />
         )}
