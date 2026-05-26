@@ -66,6 +66,13 @@ export const sidebarMenu: MenuItem[] = [
     icon: 'CheckCircle',
   },
   {
+    key: 'publish',
+    label: 'creation.kr 게시',
+    path: '/publish',
+    roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
+    icon: 'Globe',
+  },
+  {
     key: 'inquiry',
     label: '문의 게시판',
     path: '/inquiries',

@@ -9,7 +9,6 @@ import {
 import { reviewApi, type ReviewResponse } from "../services/reviewApi";
 import { colors } from "../constants/designTokens";
 import { Button } from "../components/Button";
-import { CreationKrPublishButton } from "../components/CreationKrPublishButton";
 import {
 	extractParagraphs,
 	getParagraphs,
@@ -1085,8 +1084,8 @@ export default function DocumentReview() {
 				}
 
 				await reviewApi.approveReview(newReview.id);
-				alert("문서가 승인되었습니다.");
-				navigate("/reviews");
+				alert("문서가 승인되었습니다. 게시 페이지로 이동합니다.");
+				navigate("/publish");
 			} catch (error: any) {
 				console.error("리뷰 생성 또는 승인 실패:", error);
 				alert(
@@ -1122,8 +1121,8 @@ export default function DocumentReview() {
 			}
 
 			await reviewApi.approveReview(review.id);
-			alert("문서가 승인되었습니다.");
-			navigate("/reviews");
+			alert("문서가 승인되었습니다. 게시 페이지로 이동합니다.");
+			navigate("/publish");
 		} catch (error: any) {
 			console.error("승인 실패:", error);
 			alert(
@@ -1436,37 +1435,6 @@ export default function DocumentReview() {
 					>
 						💾 HTML 다운로드
 					</Button>
-
-					{review &&
-						review.status === "APPROVED" &&
-						(document.status === "APPROVED" || document.status === "PUBLISHED") && (
-							<CreationKrPublishButton
-								reviewId={review.id}
-								categoryId={document.categoryId}
-								documentTitle={document.title}
-								publishStatus={review.publishStatus ?? document.publishStatus}
-								publishedUrl={review.publishedUrl ?? document.publishedUrl}
-								publishError={review.publishError ?? document.publishError}
-								documentStatus={document.status}
-								onSuccess={(response) => {
-									setReview(response);
-									setDocument((prev) =>
-										prev
-											? {
-													...prev,
-													status:
-														response.publishStatus === "SUCCESS"
-															? "PUBLISHED"
-															: prev.status,
-													publishedUrl: response.publishedUrl ?? prev.publishedUrl,
-													publishStatus: response.publishStatus,
-													publishError: response.publishError,
-												}
-											: prev,
-									);
-								}}
-							/>
-						)}
 
 					{document.status === "PENDING_REVIEW" &&
 						(!review || review.status === "PENDING") && (

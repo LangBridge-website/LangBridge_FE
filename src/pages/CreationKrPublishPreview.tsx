@@ -116,7 +116,7 @@ const CreationKrPublishPreview: React.FC = () => {
 
       if (response.publishStatus === 'SUCCESS' || response.publishedUrl) {
         alert(`creation.kr「${selected.label}」게시판에 게시되었습니다.`);
-        navigate('/dashboard');
+        navigate('/publish?tab=published');
         return;
       }
 
@@ -168,7 +168,7 @@ const CreationKrPublishPreview: React.FC = () => {
           <p style={{ fontSize: '14px', color: colors.secondaryText }}>
             creation.kr 게시는 중간·최고관리자만 이용할 수 있습니다.
           </p>
-          <Button variant="secondary" onClick={() => navigate(-1)} style={{ marginTop: '16px' }}>
+          <Button variant="secondary" onClick={() => navigate('/publish')} style={{ marginTop: '16px' }}>
             돌아가기
           </Button>
         </div>
@@ -181,7 +181,7 @@ const CreationKrPublishPreview: React.FC = () => {
       <div style={{ marginBottom: '24px' }}>
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/publish')}
           style={{
             background: 'none',
             border: 'none',
@@ -323,7 +323,7 @@ const CreationKrPublishPreview: React.FC = () => {
             )}
 
             <div style={{ display: 'flex', gap: '12px' }}>
-              <Button variant="secondary" onClick={() => navigate(-1)} disabled={publishing}>
+              <Button variant="secondary" onClick={() => navigate('/publish')} disabled={publishing}>
                 취소
               </Button>
               <Button
