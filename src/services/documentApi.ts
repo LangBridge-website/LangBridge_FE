@@ -357,6 +357,18 @@ export const documentApi = {
     return response.data;
   },
 
+  /** 인계 요청 문서 목록 (URL 중복 제거 없음, latestHandover 포함) */
+  getHandoverDocuments: async (): Promise<DocumentResponse[]> => {
+    const response = await apiClient.get<DocumentResponse[]>('/documents/handovers');
+    return response.data;
+  },
+
+  /** 검토 대기 PENDING 리뷰가 없을 때 생성·복구 */
+  ensurePendingReview: async (documentId: number): Promise<unknown> => {
+    const response = await apiClient.post(`/documents/${documentId}/ensure-pending-review`);
+    return response.data;
+  },
+
   /**
    * 대시보드 요약 (단일 API)
    */

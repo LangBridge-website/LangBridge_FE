@@ -25,6 +25,10 @@ import {
 	formatLastModifiedDateDisplay,
 } from "../utils/dateUtils";
 import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
+import {
+	buildCategoryMapFromList,
+	resolveCategoryDisplayName,
+} from "../utils/categoryDisplay";
 
 function isLockOld(lockedAt?: string): boolean {
 	if (!lockedAt) return false;
@@ -134,10 +138,10 @@ const convertToDocumentListItem = (
 	// 우선순위 (임시로 기본값, 나중에 priority 필드 추가 필요)
 	const priority = Priority.MEDIUM;
 
-	// 카테고리 이름 (카테고리 맵에서 조회, 없으면 미분류)
-	const category = doc.categoryId
-		? (categoryMap?.get(doc.categoryId) ?? "미분류")
-		: "미분류";
+	const category = resolveCategoryDisplayName(
+		doc.categoryId,
+		categoryMap ?? new Map(),
+	);
 
 	const item: DocumentListItem = {
 		id: doc.id,
@@ -264,24 +268,6 @@ export default function Documents() {
 		hasHandoverRequest?: boolean;
 	};
 
-	// 카테고리 목록 로드
-	useEffect(() => {
-		const fetchCategories = async () => {
-			try {
-				const cats = await categoryApi.getAllCategories();
-				const map = new Map<number, string>();
-				cats.forEach((cat: CategoryResponse) => map.set(cat.id, cat.name));
-				setCategoryMap(map);
-				setCategoryList(
-					cats.map((cat: CategoryResponse) => ({ id: cat.id, name: cat.name })),
-				);
-			} catch (error) {
-				console.error("카테고리 목록 조회 실패:", error);
-			}
-		};
-		fetchCategories();
-	}, []);
-
 	// ?status=APPROVED 등 URL 쿼리 → 상태 필터 초기값
 	useEffect(() => {
 		if (initializedStatusFromUrlRef.current) return;
@@ -320,9 +306,20 @@ export default function Documents() {
 				// 상태 필터는 다중 선택이므로 클라이언트에서 적용한다.
 				// 카테고리는 클라이언트에서 대분류 기준으로 필터링한다.
 
-				const response = await documentApi.getAllDocuments(params);
+				const [categoryList, response] = await Promise.all([
+					categoryApi.getAllCategories(),
+					documentApi.getAllDocuments(params),
+				]);
+				const map = buildCategoryMapFromList(categoryList);
+				setCategoryMap(map);
+				setCategoryList(
+					categoryList.map((cat: CategoryResponse) => ({
+						id: cat.id,
+						name: cat.name,
+					})),
+				);
 				const converted = response.map((doc) =>
-					convertToDocumentListItem(doc, categoryMap),
+					convertToDocumentListItem(doc, map),
 				);
 				const draftOnlyCount = converted.filter(
 					(doc) =>
@@ -348,20 +345,21 @@ export default function Documents() {
 		fetchDocuments();
 	}, [searchTerm, refreshTick]);
 
-	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
+	// 카테고리 이름만 갱신 (원문·이미 로드된 복사본 행 포함)
 	useEffect(() => {
 		if (categoryMap.size === 0) return;
-		setDocuments((prev) =>
-			prev.map((doc) => ({
-				...doc,
-				category:
-					doc.categoryId != null && categoryMap.has(doc.categoryId)
-						? categoryMap.get(doc.categoryId)!
-						: doc.categoryId != null
-							? `카테고리 ${doc.categoryId}`
-							: "미분류",
-			})),
-		);
+		const patchCategory = (doc: DocumentListItem): DocumentListItem => ({
+			...doc,
+			category: resolveCategoryDisplayName(doc.categoryId, categoryMap),
+		});
+		setDocuments((prev) => prev.map(patchCategory));
+		setCopiesBySourceId((prev) => {
+			const next = new Map(prev);
+			for (const [sourceId, copies] of next) {
+				next.set(sourceId, copies.map(patchCategory));
+			}
+			return next;
+		});
 	}, [categoryMap]);
 
 	// 찜 상태 로드 (일괄 API 1회)

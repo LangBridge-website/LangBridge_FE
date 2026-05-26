@@ -44,6 +44,122 @@ const MANUAL_PASTE_HTML =
 const WORD_CHAR_REGEX = /[A-Za-z0-9_]/;
 type GlossaryTermPair = { sourceTerm: string; targetTerm: string };
 
+/** Step 2에서 영역 미선택 시 전체 페이지를 번역·편집 대상으로 처리 */
+const isFullPageAreaSelection = (
+	selectedAreas: SelectedArea[],
+	isManualPasteMode: boolean,
+) => isManualPasteMode || selectedAreas.length === 0;
+
+const WorkflowLoadingOverlay: React.FC<{
+	title: string;
+	message: string;
+	progress?: number;
+}> = ({ title, message, progress }) => {
+	const showProgress = progress != null && progress > 0;
+
+	return (
+		<div
+			role="alertdialog"
+			aria-busy="true"
+			aria-live="polite"
+			style={{
+				position: 'fixed',
+				inset: 0,
+				zIndex: 10000,
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				backgroundColor: 'rgba(0, 0, 0, 0.45)',
+				padding: '24px',
+			}}
+		>
+			<div
+				style={{
+					width: '100%',
+					maxWidth: '420px',
+					padding: '28px 32px',
+					borderRadius: '12px',
+					backgroundColor: '#FFFFFF',
+					boxShadow: '0 16px 48px rgba(0, 0, 0, 0.2)',
+					textAlign: 'center',
+				}}
+			>
+				<div
+					className="transflow-loading-spinner"
+					style={{
+						width: '48px',
+						height: '48px',
+						margin: '0 auto 20px',
+						border: '4px solid #E5E7EB',
+						borderTopColor: '#2563EB',
+						borderRadius: '50%',
+					}}
+				/>
+				<h2
+					style={{
+						margin: '0 0 8px',
+						fontSize: '18px',
+						fontWeight: 600,
+						color: '#111827',
+					}}
+				>
+					{title}
+				</h2>
+				<p
+					style={{
+						margin: '0 0 20px',
+						fontSize: '14px',
+						lineHeight: 1.5,
+						color: '#6B7280',
+					}}
+				>
+					{message}
+				</p>
+				{showProgress && (
+					<>
+						<div
+							style={{
+								height: '8px',
+								borderRadius: '4px',
+								backgroundColor: '#E5E7EB',
+								overflow: 'hidden',
+								marginBottom: '8px',
+							}}
+						>
+							<div
+								style={{
+									height: '100%',
+									width: `${Math.min(100, Math.round(progress))}%`,
+									backgroundColor: '#2563EB',
+									transition: 'width 0.35s ease',
+								}}
+							/>
+						</div>
+						<p
+							style={{
+								margin: 0,
+								fontSize: '13px',
+								fontWeight: 600,
+								color: '#374151',
+							}}
+						>
+							{Math.min(100, Math.round(progress))}%
+						</p>
+					</>
+				)}
+			</div>
+			<style>{`
+        @keyframes transflow-spin {
+          to { transform: rotate(360deg); }
+        }
+        .transflow-loading-spinner {
+          animation: transflow-spin 0.9s linear infinite;
+        }
+      `}</style>
+		</div>
+	);
+};
+
 const highlightGlossaryInOriginalIframe = (
 	doc: Document,
 	glossaryTerms: GlossaryTermPair[],
@@ -946,9 +1062,14 @@ const Step2AreaSelection: React.FC<{
 							fontSize: "13px",
 							color: "#696969",
 							fontFamily: "system-ui, Pretendard, sans-serif",
+							lineHeight: 1.5,
 						}}
 					>
-						영역을 선택하세요
+						클릭하여 번역할 영역을 선택하세요.
+						<br />
+						<span style={{ color: "#374151", fontWeight: 500 }}>
+							선택하지 않고 다음을 누르면 전체 페이지가 번역 대상이 됩니다.
+						</span>
 					</div>
 				) : (
 					<div className="space-y-2">
@@ -2115,10 +2236,13 @@ const Step3PreEdit: React.FC<{
 			isManualPasteMode,
 		});
 
+		const useFullPageSelection = isFullPageAreaSelection(
+			selectedAreas,
+			isManualPasteMode,
+		);
+
 		const canInit =
-			iframeRef.current &&
-			(html || isManualPasteMode) &&
-			(selectedAreas.length > 0 || isManualPasteMode);
+			iframeRef.current && (html || isManualPasteMode) && useFullPageSelection;
 		if (canInit) {
 			const iframe = iframeRef.current!;
 			const iframeDoc =
@@ -2163,7 +2287,7 @@ const Step3PreEdit: React.FC<{
 				// Translation.jsx의 handleStartPreEdit 로직: 선택된 영역만 남기고 나머지 제거 (수동 모드에서는 스킵)
 				setTimeout(() => {
 					if (iframeDoc.body) {
-						if (!isManualPasteMode) {
+						if (!isManualPasteMode && selectedAreas.length > 0) {
 							const selectedElementIds = new Set(
 								selectedAreas.map((area) => area.id),
 							);
@@ -2267,10 +2391,11 @@ const Step3PreEdit: React.FC<{
 								});
 						}
 
-						// 선택된 영역만 남은 HTML (또는 수동 모드에서는 전체)을 onHtmlChange로 저장
 						const selectedOnlyHtml = iframeDoc.documentElement.outerHTML;
 						console.log(
-							"💾 STEP 3 선택된 영역만 저장:",
+							selectedAreas.length > 0
+								? "💾 STEP 3 선택된 영역만 저장:"
+								: "💾 STEP 3 전체 페이지 저장 (영역 미선택):",
 							selectedOnlyHtml.substring(0, 200),
 						);
 
@@ -8627,10 +8752,10 @@ const NewTranslation: React.FC = () => {
 		// 가짜 진행률 (실제 백엔드에서 진행률을 반환하지 않으므로)
 		const progressInterval = setInterval(() => {
 			setLoadingProgress((prev) => {
-				if (prev >= 90) return prev;
-				return prev + Math.random() * 15;
+				if (prev >= 98) return prev;
+				return prev + Math.random() * 8;
 			});
-		}, 300);
+		}, 400);
 
 		try {
 			// Translation.jsx와 동일한 방식으로 크롤링
@@ -8733,7 +8858,9 @@ const NewTranslation: React.FC = () => {
 					"서버와 통신할 수 없습니다. 백엔드가 실행 중인지 확인해주세요.",
 			);
 		} finally {
-			setIsLoading(false);
+			clearInterval(progressInterval);
+			setLoadingProgress(100);
+			setTimeout(() => setIsLoading(false), 400);
 		}
 	};
 
@@ -8771,13 +8898,12 @@ const NewTranslation: React.FC = () => {
 		setTranslatingProgress(0);
 		setSaveError(null);
 
-		// 가짜 진행률
 		const progressInterval = setInterval(() => {
 			setTranslatingProgress((prev) => {
-				if (prev >= 90) return prev;
-				return prev + Math.random() * 12;
+				if (prev >= 98) return prev;
+				return prev + Math.random() * 6;
 			});
-		}, 400);
+		}, 500);
 
 		try {
 			// 번역 실행 - STEP 3에서 편집된 HTML만 번역 (선택된 영역만)
@@ -8839,14 +8965,7 @@ const NewTranslation: React.FC = () => {
 				}
 			}
 
-			// STEP 2: 영역 선택 확인 (선택하지 않으면 전체 선택)
-			if (currentStep === 2) {
-				if (draft.selectedAreas.length === 0) {
-					alert("선택된 영역이 없습니다. 전체 화면이 선택됩니다.");
-					// 전체 화면 선택: body의 모든 자식을 selectedAreas에 추가
-					// 실제로는 originalHtml을 그대로 사용
-				}
-			}
+			// STEP 2: 영역 미선택 시 Step 3에서 전체 HTML 사용 (selectedAreas 빈 배열 유지)
 
 			// STEP 3에서 STEP 4로 넘어갈 때: 원문 URL이 비어있으면 모달로 입력받기
 			if (currentStep === 3) {
@@ -9599,14 +9718,22 @@ const NewTranslation: React.FC = () => {
 			>
 				<div>
 					{currentStep > 1 && (
-						<Button variant="secondary" onClick={handlePrev}>
+						<Button
+							variant="secondary"
+							onClick={handlePrev}
+							disabled={isLoading || isTranslating}
+						>
 							이전
 						</Button>
 					)}
 				</div>
 				<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
 					{currentStep < 6 && (
-						<Button variant="primary" onClick={handleNext}>
+						<Button
+							variant="primary"
+							onClick={handleNext}
+							disabled={isLoading || isTranslating}
+						>
 							다음
 						</Button>
 					)}
@@ -9645,6 +9772,21 @@ const NewTranslation: React.FC = () => {
 					}}
 				/>
 			</Modal>
+
+			{isLoading && (
+				<WorkflowLoadingOverlay
+					title="페이지를 가져오는 중"
+					message="원문을 크롤링하고 있습니다. 용량이 큰 페이지는 1~2분 정도 걸릴 수 있습니다. 창을 닫지 마세요."
+					progress={loadingProgress}
+				/>
+			)}
+			{isTranslating && (
+				<WorkflowLoadingOverlay
+					title="번역하는 중"
+					message="선택한 HTML을 번역하고 있습니다. 분량이 많으면 수 분이 걸릴 수 있습니다. 창을 닫지 마세요."
+					progress={translatingProgress}
+				/>
+			)}
 		</div>
 	);
 };

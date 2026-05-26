@@ -1,8 +1,7 @@
 /**
  * 번역 목록의 「현재 버전」 표시.
- * - 서버 `userFacingVersionNumber`가 있으면 우선 (API와 동일한 규칙).
- * - 없으면 `versionNumber`로 보조 (구 API): 0만 v1로 표시.
- * - 저장 DB 번호(0=원문,1=초벌,2=첫 수동…)는 그대로 두고, 표시만 v1,v2…로 맞춤.
+ * - 서버 `userFacingVersionNumber` 우선: 원문=v1, 복사본은 생성 순 v2,v3…
+ * - DB `versionNumber`(임시저장마다 증가·계열 max)는 목록에 쓰지 않음.
  */
 export function formatTranslationListVersionLabel(
   isFinal: boolean | undefined,
