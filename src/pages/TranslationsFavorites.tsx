@@ -40,6 +40,10 @@ import {
 	uniqueSortedMajorNames,
 } from "../utils/categoryHierarchy";
 import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
+import {
+	buildCategoryMapFromList,
+	resolveCategoryDisplayName,
+} from "../utils/categoryDisplay";
 
 function documentMatchesStatusFilter(
 	status: DocumentState | string | null | undefined,
@@ -122,12 +126,10 @@ const convertToDocumentListItem = (
   doc: DocumentResponse,
 	categoryMap?: Map<number, string>,
 ): DocumentListItem => {
-	const category =
-		doc.categoryId && categoryMap
-			? categoryMap.get(doc.categoryId) || `카테고리 ${doc.categoryId}`
-			: doc.categoryId
-				? `카테고리 ${doc.categoryId}`
-				: "미분류";
+	const category = resolveCategoryDisplayName(
+		doc.categoryId,
+		categoryMap ?? new Map(),
+	);
 
   return {
     id: doc.id,
@@ -170,12 +172,7 @@ function pendingStyleListItemFromResponse(
 			(1000 * 60 * 60 * 24),
 	);
 	const deadline = diffDays > 0 ? `${diffDays}일 후` : "마감됨";
-	const category =
-		doc.categoryId && categoryMap
-			? categoryMap.get(doc.categoryId) || `카테고리 ${doc.categoryId}`
-			: doc.categoryId
-				? `카테고리 ${doc.categoryId}`
-				: "미분류";
+	const category = resolveCategoryDisplayName(doc.categoryId, categoryMap);
 	return {
 		id: doc.id,
 		title: doc.title,
@@ -251,22 +248,6 @@ export default function TranslationsFavorites() {
 		copiesBySourceIdRef.current = copiesBySourceId;
 	}, [copiesBySourceId]);
 
-  useEffect(() => {
-    const loadCategories = async () => {
-      try {
-        const categoryList = await categoryApi.getAllCategories();
-        const map = new Map<number, string>();
-				for (const cat of categoryList) {
-          map.set(cat.id, cat.name);
-				}
-        setCategoryMap(map);
-      } catch (error) {
-				console.error("카테고리 목록 로드 실패:", error);
-      }
-    };
-    loadCategories();
-  }, []);
-
 	const mapCopiesResponseToListItems = useCallback(
 		(docs: DocumentResponse[]): RowItem[] => {
 			return docs.map((doc) => {
@@ -310,7 +291,13 @@ export default function TranslationsFavorites() {
 		try {
 			setLoading(true);
 			setError(null);
-			const response = await documentApi.getFavoriteDocuments();
+			const [categoryList, response] = await Promise.all([
+				categoryApi.getAllCategories(),
+				documentApi.getFavoriteDocuments(),
+			]);
+			const map = buildCategoryMapFromList(categoryList);
+			setCategoryMap(map);
+
 			const favoritedIds = new Set(response.map((d) => d.id));
 
 			const completedMap = new Map<number, number[]>();
@@ -337,7 +324,7 @@ export default function TranslationsFavorites() {
 				.map((id) => sourceById.get(id))
 				.filter((doc): doc is DocumentResponse => doc != null)
 				.map((doc) => {
-					const item = convertToDocumentListItem(doc, categoryMap);
+					const item = convertToDocumentListItem(doc, map);
 					if (
 						["PENDING_REVIEW", "APPROVED", "PUBLISHED"].includes(doc.status) &&
 						doc.lastModifiedBy?.name
@@ -385,22 +372,17 @@ export default function TranslationsFavorites() {
 		loadFavorites();
 	}, [loadFavorites]);
 
-	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
+	// 카테고리 이름만 갱신 (원문·이미 로드된 복사본 행 포함)
 	useEffect(() => {
 		if (categoryMap.size === 0) return;
-		const remap = (doc: DocumentListItem): DocumentListItem => ({
+		const patchCategory = (doc: DocumentListItem): DocumentListItem => ({
 			...doc,
-			category:
-				doc.categoryId != null && categoryMap.has(doc.categoryId)
-					? categoryMap.get(doc.categoryId)!
-					: doc.categoryId != null
-						? `카테고리 ${doc.categoryId}`
-						: "미분류",
+			category: resolveCategoryDisplayName(doc.categoryId, categoryMap),
 		});
-		setSourceDocuments((prev) => prev.map(remap));
+		setSourceDocuments((prev) => prev.map(patchCategory));
 		setCopiesBySourceId((prev) => {
 			const next = new Map<number, RowItem[]>();
-			for (const [id, rows] of prev) next.set(id, rows.map(remap));
+			for (const [id, rows] of prev) next.set(id, rows.map(patchCategory));
 			return next;
 		});
 	}, [categoryMap]);

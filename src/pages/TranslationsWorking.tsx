@@ -43,6 +43,10 @@ import {
 	uniqueSortedMajorNames,
 } from "../utils/categoryHierarchy";
 import { useSourceCopyMetadata } from "../hooks/useSourceCopyMetadata";
+import {
+	buildCategoryMapFromList,
+	resolveCategoryDisplayName,
+} from "../utils/categoryDisplay";
 
 /** 내가 작업 중: 초안(PENDING_TRANSLATION) 필터 칩 제외 — 목록에도 해당 상태 없음 */
 const WORKING_PAGE_STATUS_FILTER_ORDER = DOCUMENT_STATUS_ORDER.filter(
@@ -202,12 +206,7 @@ const convertToDocumentListItem = (
 			progress = Math.round((completedCount / totalParagraphs) * 100);
 		}
 	}
-	const category =
-		doc.categoryId && categoryMap
-			? categoryMap.get(doc.categoryId) || `카테고리 ${doc.categoryId}`
-			: doc.categoryId
-				? `카테고리 ${doc.categoryId}`
-				: "미분류";
+	const category = resolveCategoryDisplayName(doc.categoryId, categoryMap);
 
 	const item: DocumentListItem = {
 		id: doc.id,
@@ -265,12 +264,7 @@ function pendingStyleListItemFromResponse(
 			(1000 * 60 * 60 * 24),
 	);
 	const deadline = diffDays > 0 ? `${diffDays}일 후` : "마감됨";
-	const category =
-		doc.categoryId && categoryMap
-			? categoryMap.get(doc.categoryId) || `카테고리 ${doc.categoryId}`
-			: doc.categoryId
-				? `카테고리 ${doc.categoryId}`
-				: "미분류";
+	const category = resolveCategoryDisplayName(doc.categoryId, categoryMap);
 	return {
 		id: doc.id,
 		title: doc.title,
@@ -350,23 +344,6 @@ export default function TranslationsWorking() {
 		);
 	}, []);
 
-	// 카테고리 맵
-	useEffect(() => {
-		const loadCategories = async () => {
-			try {
-				const categoryList = await categoryApi.getAllCategories();
-				const map = new Map<number, string>();
-				for (const cat of categoryList) {
-					map.set(cat.id, cat.name);
-				}
-				setCategoryMap(map);
-			} catch (e) {
-				console.error("카테고리 목록 로드 실패:", e);
-			}
-		};
-		loadCategories();
-	}, []);
-
 	const mapCopiesResponseToListItems = useCallback(
 		(docs: DocumentResponse[]): WorkingRowItem[] => {
 			return docs.map((doc) => {
@@ -417,8 +394,14 @@ export default function TranslationsWorking() {
 				setLoading(true);
 				setError(null);
 
-				const myWorkingDocs = await documentApi.getMyWorkingAssignments();
+				const [categoryList, myWorkingDocs] = await Promise.all([
+					categoryApi.getAllCategories(),
+					documentApi.getMyWorkingAssignments(),
+				]);
 				if (cancelled) return;
+
+				const map = buildCategoryMapFromList(categoryList);
+				setCategoryMap(map);
 
 				setWorkingCopyIds(new Set(myWorkingDocs.map((d) => d.id)));
 
@@ -448,7 +431,7 @@ export default function TranslationsWorking() {
 					.map((id) => sourceById.get(id))
 					.filter((doc): doc is DocumentResponse => doc != null)
 					.map((doc) => {
-						const item = convertToDocumentListItem(doc, categoryMap);
+						const item = convertToDocumentListItem(doc, map);
 						if (
 							["PENDING_REVIEW", "APPROVED", "PUBLISHED"].includes(doc.status) &&
 							doc.lastModifiedBy?.name
@@ -496,22 +479,17 @@ export default function TranslationsWorking() {
 		};
 	}, [user?.id]);
 
-	// 카테고리 이름만 갱신 (목록 API 재호출 방지)
+	// 카테고리 이름만 갱신 (원문·이미 로드된 복사본 행 포함)
 	useEffect(() => {
 		if (categoryMap.size === 0) return;
-		const remap = (doc: DocumentListItem): DocumentListItem => ({
+		const patchCategory = (doc: DocumentListItem): DocumentListItem => ({
 			...doc,
-			category:
-				doc.categoryId != null && categoryMap.has(doc.categoryId)
-					? categoryMap.get(doc.categoryId)!
-					: doc.categoryId != null
-						? `카테고리 ${doc.categoryId}`
-						: "미분류",
+			category: resolveCategoryDisplayName(doc.categoryId, categoryMap),
 		});
-		setSourceDocuments((prev) => prev.map(remap));
+		setSourceDocuments((prev) => prev.map(patchCategory));
 		setCopiesBySourceId((prev) => {
 			const next = new Map<number, WorkingRowItem[]>();
-			for (const [id, rows] of prev) next.set(id, rows.map(remap));
+			for (const [id, rows] of prev) next.set(id, rows.map(patchCategory));
 			return next;
 		});
 	}, [categoryMap]);

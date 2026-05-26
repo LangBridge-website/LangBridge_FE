@@ -41,6 +41,25 @@ apiClient.interceptors.request.use(
   }
 );
 
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status;
+    if (status === 401) {
+      const hadToken = Boolean(localStorage.getItem('token'));
+      localStorage.removeItem('token');
+      if (hadToken && !window.location.pathname.startsWith('/oauth')) {
+        const returnPath = window.location.pathname + window.location.search;
+        if (returnPath && returnPath !== '/') {
+          sessionStorage.setItem('auth_redirect_after_login', returnPath);
+        }
+        window.location.replace('/');
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const translationApi = {
   // 웹페이지 번역
   translateWebPage: async (request) => {

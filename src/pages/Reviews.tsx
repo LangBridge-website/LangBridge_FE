@@ -10,6 +10,7 @@ import { documentApi, DocumentResponse } from '../services/documentApi';
 import { reviewApi, ReviewResponse } from '../services/reviewApi';
 import { categoryApi, CategoryResponse } from '../services/categoryApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
+import { formatTranslationListVersionLabel } from '../utils/versionDisplay';
 
 // Review와 Document를 결합한 인터페이스
 interface ReviewDocumentItem extends DocumentListItem {
@@ -17,6 +18,8 @@ interface ReviewDocumentItem extends DocumentListItem {
   reviewCreatedAt?: string;
   translatorName?: string;
   versionNumber?: number;
+  userFacingVersionNumber?: number;
+  isFinal?: boolean;
 }
 
 export default function Reviews() {
@@ -69,8 +72,13 @@ export default function Reviews() {
         
         // 문서와 리뷰를 매칭
         const reviewMap = new Map<number, ReviewResponse>();
-        reviewResponse.forEach(review => {
-          reviewMap.set(review.document.id, review);
+        reviewResponse.forEach((review) => {
+          const docId = review.document?.id;
+          if (!docId) return;
+          const existing = reviewMap.get(docId);
+          if (!existing || (review.createdAt && existing.createdAt && review.createdAt > existing.createdAt)) {
+            reviewMap.set(docId, review);
+          }
         });
         
         // DocumentResponse를 ReviewDocumentItem으로 변환
@@ -98,7 +106,7 @@ export default function Reviews() {
             status: doc.status as DocumentState,
             lastModified: doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined,
             assignedManager: doc.lastModifiedBy?.name,
-            isFinal: false,
+            isFinal: doc.currentVersionIsFinal ?? false,
             originalUrl: doc.originalUrl,
             reviewId: review?.id,
             // 검토 요청일: 리뷰 생성일 또는 문서 상태 변경일(PENDING_REVIEW 전환 시점)
@@ -107,8 +115,11 @@ export default function Reviews() {
               : (doc.updatedAt ? formatLastModifiedDate(doc.updatedAt) : undefined),
             // 담당 번역가: 리뷰의 버전 생성자 또는 문서 마지막 수정자
             translatorName: review?.translator?.name ?? doc.lastModifiedBy?.name,
-            // 버전: 리뷰의 버전 번호 또는 문서의 현재 버전 번호
-            versionNumber: review?.documentVersion?.versionNumber ?? doc.currentVersionNumber,
+            versionNumber:
+              doc.currentVersionNumber ?? review?.documentVersion?.versionNumber,
+            userFacingVersionNumber:
+              doc.userFacingVersionNumber ??
+              (doc.sourceDocumentId ? undefined : 1),
           };
         });
         
@@ -218,7 +229,11 @@ export default function Reviews() {
       align: 'right',
       render: (item) => (
         <span style={{ color: colors.primaryText, fontSize: '12px' }}>
-          {item.versionNumber ? `v${item.versionNumber}` : '-'}
+          {formatTranslationListVersionLabel(
+            item.isFinal,
+            item.versionNumber,
+            item.userFacingVersionNumber,
+          )}
         </span>
       ),
     },
