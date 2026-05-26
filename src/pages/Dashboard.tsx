@@ -11,6 +11,7 @@ import { ReviewResponse } from '../services/reviewApi';
 import { categoryApi } from '../services/categoryApi';
 import { formatLastModifiedDate } from '../utils/dateUtils';
 import { CreationKrPublishButton } from '../components/CreationKrPublishButton';
+import { colors } from '../constants/designTokens';
 
 function categoryLabel(categoryId: number | undefined, categoryMap: Map<number, string>): string {
   if (categoryId == null) return '미분류';
@@ -215,7 +216,7 @@ const Dashboard: React.FC = () => {
     <div
       className="p-8"
       style={{
-        backgroundColor: '#DCDCDC',
+        backgroundColor: colors.primaryBackground,
         minHeight: '100vh',
       }}
     >
@@ -255,9 +256,9 @@ const Dashboard: React.FC = () => {
                       key={doc.id}
                       style={{
                         padding: '12px',
-                        border: '1px solid #C0C0C0',
+                        border: `1px solid ${colors.border}`,
                         borderRadius: '8px',
-                        backgroundColor: '#D3D3D3', // lightgray - 예전 버전 (카드 1용)
+                        backgroundColor: '#F8F9FA',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'flex-start',
@@ -367,9 +368,9 @@ const Dashboard: React.FC = () => {
                       key={doc.id}
                       style={{
                         padding: '12px',
-                        border: '1px solid #C0C0C0',
+                        border: `1px solid ${colors.border}`,
                         borderRadius: '8px',
-                        backgroundColor: '#D3D3D3', // lightgray - 예전 버전 (카드 2용)
+                        backgroundColor: '#F8F9FA',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'flex-start',
@@ -480,9 +481,9 @@ const Dashboard: React.FC = () => {
                   <div
                     style={{
                       padding: '12px',
-                      border: '1px solid #C0C0C0',
+                      border: `1px solid ${colors.border}`,
                       borderRadius: '8px',
-                      backgroundColor: '#D3D3D3', // lightgray - 예전 버전
+                      backgroundColor: '#F8F9FA',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'flex-start',
@@ -539,7 +540,7 @@ const Dashboard: React.FC = () => {
                 )}
 
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   onClick={() => navigate('/reviews')}
                   className="w-full"
                 >
@@ -583,9 +584,9 @@ const Dashboard: React.FC = () => {
                         key={doc.id}
                         style={{
                           padding: '12px',
-                          border: '1px solid #C0C0C0',
+                          border: `1px solid ${colors.border}`,
                           borderRadius: '8px',
-                          backgroundColor: '#D3D3D3',
+                          backgroundColor: '#F8F9FA',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'flex-start',
@@ -666,11 +667,11 @@ const Dashboard: React.FC = () => {
                 )}
 
                 <Button
-                  variant="secondary"
-                  onClick={() => navigate('/documents?status=APPROVED')}
+                  variant="primary"
+                  onClick={() => navigate('/publish')}
                   className="w-full"
                 >
-                  승인된 문서 보기
+                  게시 페이지로 이동
                 </Button>
               </div>
             </Card>
@@ -710,9 +711,9 @@ const Dashboard: React.FC = () => {
                         key={doc.id}
                         style={{
                           padding: '12px',
-                          border: '1px solid #C0C0C0',
+                          border: `1px solid ${colors.border}`,
                           borderRadius: '8px',
-                          backgroundColor: '#D3D3D3',
+                          backgroundColor: '#F8F9FA',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'flex-start',
@@ -771,9 +772,8 @@ const Dashboard: React.FC = () => {
                 )}
 
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   onClick={() => {
-                    // 반려된 문서는 REJECTED 상태의 리뷰를 통해 확인
                     navigate('/reviews');
                   }}
                   className="w-full"
@@ -812,14 +812,14 @@ const Dashboard: React.FC = () => {
 
               <div className="space-y-2">
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   onClick={() => navigate('/translation-guide')}
                   className="w-full"
                 >
                   번역 가이드
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="primary"
                   onClick={() => navigate('/glossary')}
                   className="w-full"
                 >

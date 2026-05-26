@@ -23,6 +23,7 @@ const DocumentReview = lazy(() => import('./pages/DocumentReview'));
 const CreationKrPublishPreview = lazy(
 	() => import('./pages/CreationKrPublishPreview'),
 );
+const PublishList = lazy(() => import('./pages/PublishList'));
 const TranslationsFavorites = lazy(() => import('./pages/TranslationsFavorites'));
 const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const Glossary = lazy(() => import('./pages/Glossary'));
@@ -201,6 +202,14 @@ function App() {
 														element={
 															<LazyPage>
 																<CreationKrPublishPreview />
+															</LazyPage>
+														}
+													/>
+													<Route
+														path="/publish"
+														element={
+															<LazyPage>
+																<PublishList />
 															</LazyPage>
 														}
 													/>

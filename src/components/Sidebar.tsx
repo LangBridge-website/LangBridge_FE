@@ -11,6 +11,7 @@ import {
   Settings,
   Users,
   MessageCircle,
+  Globe,
   ChevronDown,
   ChevronUp,
   Menu,
@@ -44,6 +45,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string; size?: n
   Settings,
   Users,
   MessageCircle,
+  Globe,
 };
 
 export const Sidebar: React.FC = () => {
@@ -149,6 +151,23 @@ export const Sidebar: React.FC = () => {
     setIsMobileOpen(false);
   };
 
+  const handleLogoClick = () => {
+    navigate('/dashboard');
+    setIsMobileOpen(false);
+  };
+
+  const logoMark = (
+    <div
+      className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0"
+      style={{
+        backgroundColor: colors.accent,
+        fontSize: '14px',
+      }}
+    >
+      L
+    </div>
+  );
+
   const renderIcon = (iconName?: string, isActive: boolean = false) => {
     if (!iconName) return null;
     const IconComponent = iconMap[iconName];
@@ -164,13 +183,10 @@ export const Sidebar: React.FC = () => {
     );
   };
 
-  // 메뉴 그룹 분류
-  const mainMenuItems = filteredMenu.filter(
-    (item) => ['dashboard', 'translation_work', 'document_management', 'new_translation', 'review_approval', 'inquiry', 'glossary'].includes(item.key)
-  );
-  const bottomMenuItems = filteredMenu.filter(
-    (item) => ['activity', 'settings'].includes(item.key)
-  );
+  // 메뉴 그룹 분류 — sidebarMenu에 추가된 항목이 whitelist 누락으로 숨겨지지 않도록 하단 고정 메뉴만 분리
+  const bottomMenuKeys = ['activity', 'settings'];
+  const mainMenuItems = filteredMenu.filter((item) => !bottomMenuKeys.includes(item.key));
+  const bottomMenuItems = filteredMenu.filter((item) => bottomMenuKeys.includes(item.key));
 
   const renderMenuItem = (item: MenuItem) => {
     const hasChildren = item.children && item.children.length > 0;
@@ -179,7 +195,9 @@ export const Sidebar: React.FC = () => {
     // 부모 메뉴에 path가 있을 때만 자식의 active 상태를 고려
     // path가 없는 부모 메뉴(예: "문서 관리")는 자식이 active여도 부모는 active로 표시하지 않음
     const hasActiveChild = item.path ? item.children?.some((child) => isSubMenuActive(child)) : false;
-    const isActiveState = isItemActive || (item.path && hasActiveChild);
+    const isPublishDetailActive =
+      item.key === 'publish' && /^\/reviews\/\d+\/publish/.test(location.pathname);
+    const isActiveState = isItemActive || (item.path && hasActiveChild) || isPublishDetailActive;
 
     if (isCollapsed && !isMobileOpen) {
       // Collapsed 상태 - 아이콘만 표시
@@ -415,18 +433,22 @@ export const Sidebar: React.FC = () => {
           }}
         >
           {(!isCollapsed || isMobileOpen) && (
-            <div className="flex items-center gap-2 flex-1">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold"
-                style={{
-                  backgroundColor: colors.accent,
-                  fontSize: '14px',
-                }}
-              >
-                L
-              </div>
+            <button
+              type="button"
+              onClick={handleLogoClick}
+              className="flex items-center gap-2 flex-1 min-w-0"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+              aria-label="대시보드로 이동"
+            >
+              {logoMark}
               <span
-                className="font-semibold"
+                className="font-semibold truncate"
                 style={{
                   color: '#000000',
                   fontSize: typography.fontSize.body,
@@ -435,19 +457,23 @@ export const Sidebar: React.FC = () => {
               >
                 LangBridge
               </span>
-            </div>
+            </button>
           )}
           {isCollapsed && !isMobileOpen && (
             <div className="w-full flex flex-col items-center gap-2">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold"
+              <button
+                type="button"
+                onClick={handleLogoClick}
                 style={{
-                  backgroundColor: colors.accent,
-                  fontSize: '14px',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
                 }}
+                aria-label="대시보드로 이동"
               >
-                L
-              </div>
+                {logoMark}
+              </button>
               <button
                 onClick={toggleCollapse}
                 className="p-1 rounded-lg hover:bg-[rgba(217,234,253,0.6)] transition-colors"

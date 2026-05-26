@@ -1,4 +1,5 @@
 import React, { ReactNode } from 'react';
+import { colors } from '../constants/designTokens';
 
 export type CardPriority = 'primary' | 'normal' | 'secondary';
 
@@ -13,18 +14,18 @@ export const Card: React.FC<CardProps> = ({ children, priority = 'normal', class
     switch (priority) {
       case 'primary':
         return {
-          background: '#DCDCDC', // gainsboro - 예전 버전
-          border: '1px solid #A9A9A9',
+          background: colors.surface,
+          border: `1px solid ${colors.border}`,
         };
       case 'secondary':
         return {
-          background: '#D3D3D3', // lightgray - 현재 버전 (번역 가이드용)
-          border: '1px solid #D3D3D3',
+          background: colors.surface,
+          border: `1px solid ${colors.border}`,
         };
-      default: // normal
+      default:
         return {
-          background: '#DCDCDC', // gainsboro - 예전 버전
-          border: '1px solid #C0C0C0',
+          background: colors.surface,
+          border: `1px solid ${colors.border}`,
         };
     }
   };
@@ -45,4 +46,3 @@ export const Card: React.FC<CardProps> = ({ children, priority = 'normal', class
     </div>
   );
 };
-
