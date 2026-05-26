@@ -21,3 +21,38 @@ export function findBoardByKey(
 ): CreationKrBoardOption | undefined {
   return boards.find((b) => buildBoardKey(b) === key);
 }
+
+export function resolveInitialBoardKey(
+  boards: CreationKrBoardOption[],
+  suggested?: {
+    suggestedSitePath?: string;
+    suggestedBoardId?: string;
+  },
+): string {
+  if (boards.length === 0) {
+    return '';
+  }
+  if (suggested?.suggestedSitePath && suggested?.suggestedBoardId) {
+    const exact = findBoardByKey(
+      boards,
+      `${suggested.suggestedSitePath}::${suggested.suggestedBoardId}`,
+    );
+    if (exact) {
+      return buildBoardKey(exact);
+    }
+    const bySitePath = boards.find((b) => b.sitePath === suggested.suggestedSitePath);
+    if (bySitePath) {
+      return buildBoardKey(bySitePath);
+    }
+  }
+  return buildBoardKey(boards[0]);
+}
+
+export function formatBoardOptionLabel(
+  board: CreationKrBoardOption,
+  suggestedLabel?: string | null,
+): string {
+  const suffix =
+    suggestedLabel && board.label === suggestedLabel ? ' (추천)' : '';
+  return `${board.label}${suffix}`;
+}

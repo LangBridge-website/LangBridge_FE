@@ -129,46 +129,79 @@ export default function DocumentReview() {
 				console.log("✅ 문서 조회 성공:", doc);
 				setDocument(doc);
 
-				// 2. 리뷰 정보 가져오기
-				try {
-					if (reviewIdParam) {
-						// reviewId가 있으면 직접 조회
-						const reviewId = Number.parseInt(reviewIdParam, 10);
-						const review = await reviewApi.getReviewById(reviewId);
-						setReview(review);
-						console.log("✅ 리뷰 조회 성공 (ID로):", review);
-					} else {
-						// reviewId가 없으면 documentId로 조회 (PENDING → APPROVED 순)
-						const pendingReviews = await reviewApi.getAllReviews({
-							documentId,
-							status: "PENDING",
-						});
-						if (pendingReviews.length > 0) {
-							setReview(pendingReviews[0]);
-							console.log("✅ 리뷰 조회 성공 (PENDING):", pendingReviews[0]);
-						} else if (doc.approvedReviewId) {
-							const approvedReview = await reviewApi.getReviewById(doc.approvedReviewId);
-							setReview(approvedReview);
-							console.log("✅ 리뷰 조회 성공 (approvedReviewId):", approvedReview);
-						} else {
-							const approvedReviews = await reviewApi.getAllReviews({
-								documentId,
-								status: "APPROVED",
-							});
-							if (approvedReviews.length > 0) {
-								setReview(approvedReviews[0]);
-								console.log("✅ 리뷰 조회 성공 (APPROVED):", approvedReviews[0]);
+				// 2. 리뷰 정보 가져오기 (실패해도 본문 로드는 계속)
+				const loadPendingReview = async () => {
+					const pendingReviews = await reviewApi.getAllReviews({
+						documentId,
+						status: "PENDING",
+					});
+					return pendingReviews[0] ?? null;
+				};
+
+				let resolvedReview: ReviewResponse | null = null;
+
+				if (reviewIdParam) {
+					const reviewId = Number.parseInt(reviewIdParam, 10);
+					if (!Number.isNaN(reviewId)) {
+						try {
+							const byId = await reviewApi.getReviewById(reviewId);
+							if (byId.document?.id === documentId) {
+								resolvedReview = byId;
+								console.log("✅ 리뷰 조회 성공 (ID로):", byId);
 							} else {
-								console.warn("⚠️ 연결된 리뷰가 없습니다.");
+								console.warn(
+									"⚠️ URL의 reviewId가 다른 문서에 속합니다. PENDING 리뷰로 재조회합니다.",
+								);
 							}
+						} catch (reviewByIdError) {
+							console.warn("reviewId 조회 실패, PENDING으로 재시도:", reviewByIdError);
 						}
 					}
-				} catch (reviewError: any) {
-					console.error("리뷰 조회 실패:", reviewError);
-					setError(
-						"리뷰 정보를 불러오는데 실패했습니다: " +
-							(reviewError.response?.data?.message || reviewError.message),
-					);
+				}
+
+				if (!resolvedReview) {
+					resolvedReview = await loadPendingReview();
+					if (resolvedReview) {
+						console.log("✅ 리뷰 조회 성공 (PENDING):", resolvedReview);
+					}
+				}
+
+				if (!resolvedReview && doc.status === "PENDING_REVIEW") {
+					try {
+						await documentApi.ensurePendingReview(documentId);
+						resolvedReview = await loadPendingReview();
+						if (resolvedReview) {
+							console.log("✅ 검토 대기 리뷰 복구 후 조회:", resolvedReview);
+						}
+					} catch (ensureError) {
+						console.warn("검토 대기 리뷰 자동 복구 실패:", ensureError);
+					}
+				}
+
+				if (!resolvedReview && doc.approvedReviewId) {
+					try {
+						resolvedReview = await reviewApi.getReviewById(doc.approvedReviewId);
+						console.log("✅ 리뷰 조회 성공 (approvedReviewId):", resolvedReview);
+					} catch {
+						// ignore
+					}
+				}
+
+				if (!resolvedReview) {
+					const approvedReviews = await reviewApi.getAllReviews({
+						documentId,
+						status: "APPROVED",
+					});
+					if (approvedReviews.length > 0) {
+						resolvedReview = approvedReviews[0];
+						console.log("✅ 리뷰 조회 성공 (APPROVED):", approvedReviews[0]);
+					}
+				}
+
+				if (resolvedReview) {
+					setReview(resolvedReview);
+				} else {
+					console.warn("⚠️ 연결된 리뷰가 없습니다. 번역본만 표시합니다.");
 				}
 
 				// 3. 버전 정보 가져오기
@@ -282,7 +315,7 @@ export default function DocumentReview() {
 		};
 
 		loadData();
-	}, [documentId]);
+	}, [documentId, reviewIdParam]);
 
 	// 원문 iframe 렌더링 + 문단 클릭/호버 이벤트
 	useEffect(() => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
+import { AuthGuard } from './AuthGuard';
 import { useSidebar } from '../contexts/SidebarContext';
 import { colors, sizes, transitions } from '../constants/designTokens';
 
@@ -48,7 +49,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             boxSizing: 'border-box',
           }}
         >
-          {children}
+          <AuthGuard>{children}</AuthGuard>
         </div>
       </main>
     </div>

@@ -41,19 +41,17 @@ export default function TranslationsHandover() {
         setLoading(true);
         setError(null);
 
-        const [allDocs, categoryList] = await Promise.all([
-          documentApi.getAllDocuments(),
+        const [handoverDocs, categoryList] = await Promise.all([
+          documentApi.getHandoverDocuments(),
           categoryApi.getAllCategories(),
         ]);
 
         const categoryMap = new Map<number, string>();
         categoryList.forEach((cat) => categoryMap.set(cat.id, cat.name));
 
-        const docsWithHandover = allDocs.filter(
-          (doc) => !!doc.latestHandover && doc.status !== 'PENDING_TRANSLATION'
-        );
-
-        const handoverDocItems: HandoverDocumentItem[] = docsWithHandover.map((doc) => {
+        const handoverDocItems: HandoverDocumentItem[] = handoverDocs
+          .filter((doc) => !!doc.latestHandover)
+          .map((doc) => {
           const h = doc.latestHandover!;
           return {
             id: doc.id,
@@ -71,7 +69,7 @@ export default function TranslationsHandover() {
             completedParagraphCount: h.completedParagraphs?.length ?? 0,
             estimatedLength: doc.estimatedLength,
           };
-        });
+          });
 
         handoverDocItems.sort((a, b) => b.handoverAt.localeCompare(a.handoverAt));
         setDocuments(handoverDocItems);

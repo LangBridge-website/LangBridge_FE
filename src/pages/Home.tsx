@@ -39,9 +39,15 @@ export default function Home() {
         window.history.replaceState({}, document.title, '/');
       }
       
-      // 리다이렉트
-      console.log('🚀 대시보드로 리다이렉트...');
-      navigate('/dashboard', { replace: true });
+      const returnPath = sessionStorage.getItem('auth_redirect_after_login');
+      if (returnPath && returnPath !== '/') {
+        sessionStorage.removeItem('auth_redirect_after_login');
+        console.log('🚀 로그인 후 이전 페이지로 이동:', returnPath);
+        navigate(returnPath, { replace: true });
+      } else {
+        console.log('🚀 대시보드로 리다이렉트...');
+        navigate('/dashboard', { replace: true });
+      }
     } else {
       console.log('ℹ️ 사용자 정보가 없습니다.');
     }
