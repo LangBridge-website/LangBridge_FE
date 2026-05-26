@@ -79,7 +79,7 @@ export function Table<T extends { id: number | string }>({
         backgroundColor: colors.surface,
         border: `1px solid ${colors.border}`,
         borderRadius: '8px',
-        overflow: 'hidden',
+        overflow: 'auto',
       }}
     >
       <style>{`
