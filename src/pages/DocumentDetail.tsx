@@ -142,6 +142,7 @@ export default function DocumentDetail() {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
 	const from = searchParams.get("from");
+	const isHandoverView = from === "handover";
 	const documentId = id ? Number.parseInt(id, 10) : null;
 
 	const [loading, setLoading] = useState(true);
@@ -186,7 +187,7 @@ export default function DocumentDetail() {
 
 	useEffect(() => {
 		setHeaderMetaExpanded(false);
-	}, [id]);
+	}, [id, from]);
 
 	// 패널 토글
 	const togglePanel = (panelId: string) => {
@@ -680,7 +681,7 @@ export default function DocumentDetail() {
 				{/* 헤더 */}
 				<div
 					style={{
-						padding: "12px 24px",
+						padding: "8px 16px",
 						backgroundColor: colors.surface,
 						borderBottom: `1px solid ${colors.border}`,
 						display: "flex",
@@ -697,7 +698,7 @@ export default function DocumentDetail() {
 						style={{
 							display: "flex",
 							alignItems: "center",
-							gap: "16px",
+							gap: "12px",
 							flex: 1,
 							minWidth: 0,
 							overflow: "hidden",
@@ -734,23 +735,6 @@ export default function DocumentDetail() {
 									overflow: "hidden",
 								}}
 							>
-								{document.latestHandover && from === "handover" && (
-									<Button
-										variant="secondary"
-										onClick={() => setShowHandoverModal(true)}
-										style={{
-											fontSize: "12px",
-											padding: "6px 12px",
-											whiteSpace: "nowrap",
-											flexShrink: 0,
-											borderColor: "#FFB300",
-											color: "#B8860B",
-											backgroundColor: "#FFFDE7",
-										}}
-									>
-										📋 인계 메모 확인
-									</Button>
-								)}
 								<div
 									style={{
 										display: "flex",
@@ -763,9 +747,9 @@ export default function DocumentDetail() {
 								>
 									<div
 										style={{
-											fontSize: "12px",
+											fontSize: "11px",
 											color: colors.secondaryText,
-											marginBottom: "2px",
+											marginBottom: 0,
 											overflow: "hidden",
 											textOverflow: "ellipsis",
 											whiteSpace: "nowrap",
@@ -796,7 +780,7 @@ export default function DocumentDetail() {
 										>
 											<div
 												style={{
-													fontSize: "14px",
+													fontSize: "13px",
 													fontWeight: 600,
 													color: "#000000",
 													minWidth: 0,
@@ -818,7 +802,7 @@ export default function DocumentDetail() {
 											{document.originalUrl?.trim() && (
 												<div
 													style={{
-														marginTop: "6px",
+														marginTop: "2px",
 														display: "flex",
 														alignItems: headerMetaExpanded
 															? "flex-start"
@@ -904,15 +888,16 @@ export default function DocumentDetail() {
 									<div
 										style={{
 											display: "flex",
-											gap: "12px",
+											gap: "8px",
 											alignItems: "center",
 											minWidth: 0,
 											overflow: "hidden",
+											marginTop: "2px",
 										}}
 									>
 										<span
 											style={{
-												fontSize: "11px",
+												fontSize: "10px",
 												color: colors.secondaryText,
 												overflow: "hidden",
 												textOverflow: "ellipsis",
@@ -943,12 +928,17 @@ export default function DocumentDetail() {
 						style={{
 							display: "flex",
 							alignItems: "center",
-							gap: "24px",
-							padding: "6px 16px",
+							gap: "16px",
+							padding: "4px 12px",
 							backgroundColor: "#F8F9FA",
 							borderRadius: "6px",
 							border: "1px solid #D3D3D3",
-							flexShrink: 0,
+							flexShrink: 1,
+							minWidth: 0,
+							overflowX: "auto",
+							overflowY: "hidden",
+							maxWidth: "55%",
+							whiteSpace: "nowrap",
 						}}
 					>
 						<span
@@ -1084,6 +1074,24 @@ export default function DocumentDetail() {
 						>
 							💬 채팅
 						</button>
+
+						{isHandoverView && document?.latestHandover && (
+							<Button
+								variant="secondary"
+								onClick={() => setShowHandoverModal(true)}
+								style={{
+									fontSize: "12px",
+									padding: "6px 10px",
+									whiteSpace: "nowrap",
+									flexShrink: 0,
+									borderColor: "#FFB300",
+									color: "#B8860B",
+									backgroundColor: "#FFFDE7",
+								}}
+							>
+								📋 인계 메모
+							</Button>
+						)}
 
 						{from === "handover" ? (
 							document?.status !== "PENDING_TRANSLATION" ? (
