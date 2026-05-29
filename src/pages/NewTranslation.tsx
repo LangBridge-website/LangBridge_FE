@@ -44,12 +44,6 @@ const MANUAL_PASTE_HTML =
 const WORD_CHAR_REGEX = /[A-Za-z0-9_]/;
 type GlossaryTermPair = { sourceTerm: string; targetTerm: string };
 
-/** Step 2에서 영역 미선택 시 전체 페이지를 번역·편집 대상으로 처리 */
-const isFullPageAreaSelection = (
-	selectedAreas: SelectedArea[],
-	isManualPasteMode: boolean,
-) => isManualPasteMode || selectedAreas.length === 0;
-
 const WorkflowLoadingOverlay: React.FC<{
 	title: string;
 	message: string;
@@ -2236,13 +2230,7 @@ const Step3PreEdit: React.FC<{
 			isManualPasteMode,
 		});
 
-		const useFullPageSelection = isFullPageAreaSelection(
-			selectedAreas,
-			isManualPasteMode,
-		);
-
-		const canInit =
-			iframeRef.current && (html || isManualPasteMode) && useFullPageSelection;
+		const canInit = iframeRef.current && (html || isManualPasteMode);
 		if (canInit) {
 			const iframe = iframeRef.current!;
 			const iframeDoc =
